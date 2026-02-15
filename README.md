@@ -4,6 +4,7 @@ A long-horizon persistent ReACT agent that remembers conversations, times out on
 
 ## How It Works
 
+**CLI mode:**
 ```
 ┌─────────────┐         ┌──────────────┐         ┌─────────────┐
 │   main.py   │──save──▶│  sessions/   │◀──load──│   main.py   │
@@ -17,8 +18,26 @@ A long-horizon persistent ReACT agent that remembers conversations, times out on
 └──────────────┘               │ poll every 30s
                          ┌─────▼───────┐
                          │ scheduler.py │
-                         │  (FastAPI)   │
+                         │  (terminal)  │
                          └─────────────┘
+```
+
+**Slack mode:**
+```
+┌─────────────────────────────────────┐
+│  slack_server.py (always running)   │
+│                                     │
+│  POST /slack/events                 │
+│    → receives user DM               │
+│    → runs agent.run(msg)            │
+│    → posts response back via DM     │
+│                                     │
+│  Background: poll_queue()           │
+│    → polls queue.json every 30s     │
+│    → sends due notifications as DMs │
+│                                     │
+│  Exposed via ngrok                  │
+└─────────────────────────────────────┘
 ```
 
 1. **User starts `main.py`** — picks an existing session or creates a new one
@@ -31,13 +50,25 @@ A long-horizon persistent ReACT agent that remembers conversations, times out on
 
 ```
 ProactiveClaw/
-├── .env                # API keys + AGENT_TIMEOUT setting
+├── .env                # API keys + AGENT_TIMEOUT + Slack credentials
 ├── requirements.txt    # Python dependencies
 ├── prompts.py          # System prompt + pre-exit prompt
-├── tools.py            # Tool definitions (web search, schedule notifications)
+├── tools/              # Tool definitions — modular package
+│   ├── __init__.py     # Aggregates all tools, re-exports public interface
+│   ├── _state.py       # Shared state (session ID, queue file path, FS base)
+│   ├── _google_auth.py # Google OAuth (shared by calendar + gmail)
+│   ├── web.py          # tavily_search (1 tool)
+│   ├── scheduling.py   # schedule_notifications, get_current_datetime (2 tools)
+│   ├── calendar.py     # Google Calendar CRUD (4 tools)
+│   ├── gmail.py        # Gmail read/send/reply (4 tools)
+│   ├── notion.py       # Notion search/read/create/update/query (6 tools)
+│   ├── filesystem.py   # File system ops + search (7 tools)
+│   ├── data.py         # Structured data — JSON & CSV read/write (4 tools)
+│   └── charts.py       # generate_chart via matplotlib (1 tool)
 ├── agent.py            # Agent class with persistence + pre-exit flow
 ├── main.py             # CLI entrypoint with timeout + session management
-├── scheduler.py        # FastAPI server + background queue poller
+├── scheduler.py        # FastAPI server + background queue poller (CLI mode)
+├── slack_server.py     # Slack bot server + notification delivery (Slack mode)
 ├── sessions/           # Created at runtime — stores conversation JSON files
 └── queue.json          # Created at runtime — notification queue
 ```
@@ -47,10 +78,11 @@ ProactiveClaw/
 | File | Purpose |
 |------|---------|
 | **`prompts.py`** | Contains `SYSTEM_PROMPT` (agent behavior rules) and `PRE_EXIT_PROMPT` (instructs the LLM to generate 5 timezone-aware notifications across different time horizons) |
-| **`tools.py`** | Defines two tools the LLM can call: `tavily_search` for web lookups and `schedule_notifications` for writing entries to `queue.json`. Also provides `set_current_session_id()` so notifications are tagged with the correct session |
-| **`agent.py`** | The `Agent` class — manages conversation history, serializes OpenAI message objects to JSON for persistence, saves/loads sessions from disk, and runs the pre-exit flow on timeout |
+| **`tools/`** | Modular package with 29 tools across 10 modules. Includes web search, scheduling, Google Calendar, Gmail, Notion, file system operations (with search and pagination for large files), structured data (JSON/CSV with row-based pagination), and chart generation. Re-exports `TOOLS_SCHEMA`, `dispatch_tool_call`, `set_current_session_id`, and `QUEUE_FILE` from `__init__.py` |
+| **`agent.py`** | The `Agent` class — manages conversation history (text + images), serializes OpenAI message objects to JSON for persistence, saves/loads sessions from disk, and runs the pre-exit flow on timeout |
 | **`main.py`** | CLI entrypoint — uses `select.select()` for input with timeout (macOS/Linux), manages session selection, clears stale queue entries on resume |
-| **`scheduler.py`** | FastAPI app that runs independently — polls `queue.json` every 30s and prints due notifications. Also exposes `POST /notify` for future integrations (Slack, WhatsApp, etc.) |
+| **`scheduler.py`** | FastAPI app that runs independently — polls `queue.json` every 30s and prints due notifications to the terminal. Used in CLI mode only |
+| **`slack_server.py`** | Slack bot server — receives DMs via Slack Events API, runs the agent, posts responses back as DMs. Also polls `queue.json` and delivers due notifications as Slack DMs |
 
 ## Setup
 
@@ -68,17 +100,29 @@ Create a `.env` file in the project root:
 OPENAI_API_KEY=your-openai-api-key
 TAVILY_API_KEY=your-tavily-api-key
 AGENT_TIMEOUT=300
+
+# Slack mode (optional — only needed if using Slack interface)
+SLACK_BOT_TOKEN=xoxb-...
+SLACK_SIGNING_SECRET=...
+SLACK_USER_ID=U...
 ```
 
 - `OPENAI_API_KEY` — your OpenAI API key (uses GPT-4o)
 - `TAVILY_API_KEY` — your [Tavily](https://tavily.com/) API key for web search
 - `AGENT_TIMEOUT` — seconds of idle time before the agent auto-exits (default: 300 = 5 minutes)
+- `SLACK_BOT_TOKEN` — Bot User OAuth Token from your Slack app (starts with `xoxb-`)
+- `SLACK_SIGNING_SECRET` — Signing Secret from your Slack app's Basic Information page
+- `SLACK_USER_ID` — your Slack user ID (find it in your Slack profile → three dots → Copy member ID)
 
 ## Running
 
+There are two modes: **CLI mode** (local terminal) and **Slack mode** (DM a Slack bot). Pick one.
+
+### CLI Mode
+
 You need **two terminals**:
 
-### Terminal 1 — Start the scheduler (keep running)
+**Terminal 1 — Start the scheduler (keep running):**
 
 ```bash
 python scheduler.py
@@ -86,7 +130,7 @@ python scheduler.py
 
 This starts a FastAPI server on port 8000 and begins polling `queue.json` every 30 seconds.
 
-### Terminal 2 — Start the agent CLI
+**Terminal 2 — Start the agent CLI:**
 
 ```bash
 python main.py
@@ -113,6 +157,19 @@ You: What's the latest news about SpaceX?
 Agent: SpaceX successfully launched...
 ```
 
+### Sending Images (CLI)
+
+Use `/image` or `/img` followed by a file path:
+
+```
+You: /image /path/to/screenshot.png
+Caption (or press Enter): What's wrong with this error message?
+
+Agent: The error is a NullPointerException on line 42...
+```
+
+If you press Enter without a caption, it defaults to "What's in this image?". Supports PNG, JPEG, GIF, and WebP.
+
 ### Timeout & Notifications
 
 If you stop typing for `AGENT_TIMEOUT` seconds:
@@ -136,6 +193,34 @@ Over in Terminal 1 (scheduler), you'll see notifications fire at their scheduled
 ### Resuming a Session
 
 Just run `python main.py` again, pick the session, and the full conversation history is restored. Any pending queue entries for that session are cleared so you don't get stale notifications.
+
+### Slack Mode
+
+You need **two terminals** and a Slack app:
+
+**Terminal 1 — Start the Slack server:**
+
+```bash
+python slack_server.py
+```
+
+**Terminal 2 — Expose via ngrok:**
+
+```bash
+ngrok http 8000
+```
+
+Copy the HTTPS URL from ngrok (e.g. `https://abc123.ngrok.io`) and set it as your Slack app's Event Subscriptions Request URL: `https://abc123.ngrok.io/slack/events`
+
+Then just DM the bot in Slack. All conversations share a single persistent session (`slack_<your_user_id>`), and scheduled notifications are delivered as Slack DMs. You can also send images — just attach a photo to your message and the agent will see it.
+
+#### Slack App Setup
+
+1. Go to [api.slack.com/apps](https://api.slack.com/apps) and create a new app
+2. **OAuth & Permissions** — add Bot Token Scopes: `chat:write`, `im:history`, `im:read`, `im:write`, `files:read`
+3. **Event Subscriptions** — enable events, set Request URL to your ngrok HTTPS URL + `/slack/events`
+4. **Subscribe to bot events** — add `message.im`
+5. **Install to workspace** — copy the Bot User OAuth Token and Signing Secret into your `.env`
 
 ## Notification Time Horizons
 
@@ -165,11 +250,11 @@ curl -X POST http://localhost:8000/notify \
   }'
 ```
 
-This can be used to build Slack, WhatsApp, or email notification integrations in the future.
+This endpoint is also available on `slack_server.py` for compatibility.
 
-## Quick Test (low timeout)
+## Quick Test
 
-To test the full flow quickly, set a short timeout:
+### CLI mode (low timeout)
 
 ```bash
 # In .env, set:
@@ -183,3 +268,11 @@ python main.py
 # Ask a question, then wait 30 seconds
 # Watch the pre-exit flow trigger and notifications appear in Terminal 1
 ```
+
+### Slack mode
+
+1. Start `python slack_server.py` + `ngrok http 8000`
+2. Configure the ngrok URL in Slack Event Subscriptions
+3. DM the bot "hello" — you should get a response
+4. Send an image with a question — the agent should describe/analyze it
+5. Ask the agent to schedule a reminder for 1 minute from now — it should arrive as a Slack DM

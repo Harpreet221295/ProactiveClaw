@@ -102,8 +102,27 @@ def main():
             print("Goodbye!")
             break
 
+        # Check for image attachment: /image <path> or /img <path>
+        images = None
+        if query.lower().startswith(("/image ", "/img ")):
+            parts = query.split(maxsplit=1)
+            if len(parts) == 2:
+                img_path = parts[1].strip()
+                if os.path.isfile(img_path):
+                    with open(img_path, "rb") as f:
+                        images = [f.read()]
+                    query = timed_input("Caption (or press Enter): ", timeout)
+                    if query is None:
+                        agent.run_pre_exit()
+                        print("\n[session saved — exiting due to inactivity]")
+                        break
+                    query = query.strip() or "What's in this image?"
+                else:
+                    print(f"File not found: {img_path}")
+                    continue
+
         print()
-        answer = agent.run(query)
+        answer = agent.run(query, images=images)
         print(f"\nAgent: {answer}")
 
 

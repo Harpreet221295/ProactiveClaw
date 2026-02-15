@@ -6,3 +6,6 @@ uvicorn
 google-api-python-client
 google-auth-oauthlib
 requests
+slack_sdk
+matplotlib
+pandas

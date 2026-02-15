@@ -1,4 +1,6 @@
+import base64
 import json
+import mimetypes
 import os
 from datetime import datetime, timezone, timedelta
 
@@ -66,8 +68,28 @@ class Agent:
         with open(self._session_path(), "w") as f:
             json.dump({"messages": self._serialize_messages()}, f, indent=2)
 
-    def run(self, user_message: str) -> str:
-        self.messages.append({"role": "user", "content": user_message})
+    def run(self, user_message: str, images: list[bytes] | None = None) -> str:
+        if images:
+            content = [{"type": "text", "text": user_message}]
+            for img_bytes in images:
+                mime = "image/png"
+                # Try to detect from magic bytes
+                if img_bytes[:3] == b"\xff\xd8\xff":
+                    mime = "image/jpeg"
+                elif img_bytes[:4] == b"\x89PNG":
+                    mime = "image/png"
+                elif img_bytes[:4] == b"GIF8":
+                    mime = "image/gif"
+                elif img_bytes[:4] == b"RIFF" and img_bytes[8:12] == b"WEBP":
+                    mime = "image/webp"
+                b64 = base64.b64encode(img_bytes).decode("utf-8")
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:{mime};base64,{b64}"},
+                })
+            self.messages.append({"role": "user", "content": content})
+        else:
+            self.messages.append({"role": "user", "content": user_message})
 
         while True:
             response = self.client.chat.completions.create(
@@ -91,10 +113,11 @@ class Agent:
                     "content": result,
                 })
 
-    def run_pre_exit(self) -> None:
+    def run_pre_exit(self) -> str:
         now_local = datetime.now().astimezone()
         current_time = now_local.isoformat()
         prompt = PRE_EXIT_PROMPT.format(current_time=current_time)
         print("\n[timeout] Session idle — running pre-exit flow...")
         answer = self.run(prompt)
         print(f"\nAgent: {answer}")
+        return answer
