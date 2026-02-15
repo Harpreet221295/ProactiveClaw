@@ -18,6 +18,7 @@ class Agent:
         self.client = OpenAI()
         self.model = model
         self.session_id = session_id
+        self.chat_summary = chat_summary
         now_local = datetime.now().astimezone()
         system_prompt = SYSTEM_PROMPT.format(current_time=now_local.isoformat())
 
@@ -117,6 +118,30 @@ class Agent:
                     "tool_call_id": tool_call.id,
                     "content": result,
                 })
+
+    def format_conversation_for_memory(self) -> list[dict]:
+        """Convert conversation to SimpleMem dialogue format.
+
+        Filters out system/tool messages and strips any previous-session
+        summary so only the current conversation is stored in long-term memory.
+        """
+        dialogues = []
+        for msg in self._serialize_messages():
+            role = msg.get("role", "")
+            content = msg.get("content")
+            if role in ("system", "tool") or content is None:
+                continue
+            if isinstance(content, list):
+                text = " ".join(c.get("text", "") for c in content if c.get("type") == "text")
+            else:
+                text = content
+            if not text:
+                continue
+            # Skip messages that are the previous-session summary itself
+            if self.chat_summary and self.chat_summary.strip() in text:
+                continue
+            dialogues.append({"role": role, "content": text})
+        return dialogues
 
     def run_pre_exit(self, bandit_recommendations: str = "") -> str:
         now_local = datetime.now().astimezone()

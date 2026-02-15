@@ -9,6 +9,7 @@ from .notion import search_notion, read_notion_page, create_notion_page, update_
 from .filesystem import fs_list_files, fs_read_file, fs_write_file, fs_create_directory, fs_delete, fs_move, fs_search_file, SCHEMA as _filesystem_schema
 from .data import fs_read_json, fs_write_json, fs_read_csv, fs_write_csv, SCHEMA as _data_schema
 from .charts import generate_chart, SCHEMA as _charts_schema
+from .memory import query_long_term_memory, retrieve_long_term_memory, SCHEMA as _memory_schema
 
 TOOLS_SCHEMA = (
     _web_schema
@@ -19,6 +20,7 @@ TOOLS_SCHEMA = (
     + _filesystem_schema
     + _data_schema
     + _charts_schema
+    + _memory_schema
 )
 
 TOOL_FUNCTIONS = {
@@ -51,6 +53,8 @@ TOOL_FUNCTIONS = {
     "fs_read_csv": fs_read_csv,
     "fs_write_csv": fs_write_csv,
     "generate_chart": generate_chart,
+    "query_long_term_memory": query_long_term_memory,
+    "retrieve_long_term_memory": retrieve_long_term_memory,
 }
 
 

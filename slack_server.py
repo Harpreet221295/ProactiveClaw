@@ -277,6 +277,17 @@ async def _idle_monitor(dm_channel: str) -> None:
                         None, agent.generate_summary
                     )
                     Agent.save_summary(SLACK_SESSION_ID, new_summary)
+
+                    # Store conversation in SimpleMem long-term memory
+                    try:
+                        from memory import store_dialogues
+                        dialogues = agent.format_conversation_for_memory()
+                        if dialogues:
+                            store_dialogues(dialogues)
+                            print(f"[memory] Stored {len(dialogues)} dialogue turns in SimpleMem")
+                    except Exception as mem_err:
+                        print(f"[warning] SimpleMem storage failed: {mem_err}")
+
                     agent.archive_session()
                     print(f"[summary] Conversation summarized and session archived")
                 except Exception as e:
