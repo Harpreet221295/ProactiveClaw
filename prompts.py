@@ -18,6 +18,8 @@ Rules:
 PRE_EXIT_PROMPT = """The user has gone idle and this session is ending due to inactivity.
 Current time: {current_time}
 
+{bandit_recommendations}
+
 Review the conversation and decide whether follow-up notifications would be useful.
 
 DO NOT schedule notifications if:
@@ -26,24 +28,41 @@ DO NOT schedule notifications if:
 - The task discussed was fully completed with no loose ends
 - There's simply nothing meaningful to remind the user about
 
-You also have access to the user's Google Calendar, Gmail, and Notion — consider checking upcoming events, recent important emails, or Notion tasks/notes for context when deciding what notifications to schedule.
+## Before scheduling, gather context using your tools:
+- **Google Calendar**: Check upcoming events, meetings, and busy times. Don't schedule notifications during meetings or blocked time.
+- **Gmail**: Check for recent important emails related to the conversation topics — they may inform urgency or relevance.
+- **Notion**: Check tasks, notes, or databases for deadlines or priorities tied to what was discussed.
+Use this context to decide WHEN and WHETHER to notify. Your judgment matters more than any recommendation scores.
 
 If follow-ups ARE warranted, call the schedule_notifications tool with 1–5 notifications.
 Only schedule as many as genuinely make sense — don't pad with filler.
 
+## Scheduling guidelines:
 Each notification needs an ISO 8601 timestamp WITH timezone offset (e.g. -08:00, +00:00) and a message.
 Compute all timestamps relative to the current time above. Never use naive timestamps.
+Schedule notifications chronologically forward from the current time.
 
-Use these time horizons as a guide (pick whichever apply):
-1. Immediate (15–30min from now): a "welcome back" nudge summarizing where we left off
-2. Short-term (1–2hrs from now): a follow-up on the most recent topic discussed
-3. Medium-term (3–6hrs from now): check for updates on something the user researched
-4. Long-term (8–12hrs from now): an end-of-day or next-morning recap/reminder
-5. Extended (18–24hrs from now): a next-day prompt tied to anything with a time component
+**Use your own judgment to determine timing based on:**
+- **Task urgency**: If something has a deadline, cluster notifications before the deadline regardless of any availability scores. A report due at 3 PM needs a reminder before 3 PM, period.
+- **Calendar awareness**: Avoid scheduling during meetings or blocked time. Schedule right after a meeting ends if the topic is related.
+- **Conversation context**: A deep research session warrants different follow-up timing than a quick question.
+- **Time of day**: Don't schedule notifications for unreasonable hours (e.g. 3 AM) even if scores suggest it.
 
-Example — if current time is 2025-06-15T10:00:00-08:00, you might schedule:
-  - "2025-06-15T10:20:00-08:00" — "Hey! We were looking into X — ready to pick back up?"
-  - "2025-06-15T14:00:00-08:00" — "The Y results you asked about may have updated by now."
-  - "2025-06-16T09:00:00-08:00" — "Morning reminder: you wanted to check Z today."
+If availability predictions are provided above, treat them as ONE signal among many — not as a rulebook. Override them freely when urgency, calendar, or common sense demands it. If no predictions are available, use these general time horizons as a fallback:
+1. Short-term (15min–2hrs): a nudge to resume or follow up on the most recent topic
+2. Medium-term (3–6hrs): check for updates or new information
+3. Long-term (8–24hrs): end-of-day recap, next-morning reminder, or deadline-driven prompt
 
 After deciding (whether you schedule or not), say a brief goodbye."""
+
+SUMMARY_PROMPT = """Summarize the conversation below into a concise context document. This summary will be given to a future version of yourself at the start of the next conversation so you have context on what was just discussed.
+
+Guidelines:
+- Include ISO 8601 timestamps to clearly denote when the conversation happened
+- Capture key topics discussed, decisions made, and specific results/facts found
+- Highlight any pending tasks, open questions, or things the user wanted to follow up on
+- Include what notifications were scheduled (if any) and what they were about
+- Note any user preferences or patterns you observed
+- Keep it concise — just enough to pick up naturally in the next conversation
+
+Output ONLY the summary document, nothing else."""

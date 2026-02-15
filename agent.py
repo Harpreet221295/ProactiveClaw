@@ -1,12 +1,11 @@
 import base64
 import json
-import mimetypes
 import os
 from datetime import datetime, timezone, timedelta
 
 from openai import OpenAI
 from tools import TOOLS_SCHEMA, dispatch_tool_call
-from prompts import SYSTEM_PROMPT, PRE_EXIT_PROMPT
+from prompts import SYSTEM_PROMPT, PRE_EXIT_PROMPT, SUMMARY_PROMPT
 
 SESSIONS_DIR = os.path.join(os.path.dirname(__file__), "sessions")
 
@@ -14,17 +13,23 @@ DEFAULT_MODEL = "gpt-5-mini"
 
 
 class Agent:
-    def __init__(self, model: str = DEFAULT_MODEL, session_id: str | None = None):
+    def __init__(self, model: str = DEFAULT_MODEL, session_id: str | None = None,
+                 chat_summary: str | None = None):
         self.client = OpenAI()
         self.model = model
         self.session_id = session_id
         now_local = datetime.now().astimezone()
         system_prompt = SYSTEM_PROMPT.format(current_time=now_local.isoformat())
+
+        if chat_summary:
+            system_prompt += f"\n\n{chat_summary}"
+
         self.messages = [{"role": "system", "content": system_prompt}]
 
         if session_id:
             os.makedirs(SESSIONS_DIR, exist_ok=True)
-            self._load_session()
+            if not chat_summary:
+                self._load_session()
 
     def _session_path(self) -> str:
         return os.path.join(SESSIONS_DIR, f"{self.session_id}.json")
@@ -113,11 +118,93 @@ class Agent:
                     "content": result,
                 })
 
-    def run_pre_exit(self) -> str:
+    def run_pre_exit(self, bandit_recommendations: str = "") -> str:
         now_local = datetime.now().astimezone()
         current_time = now_local.isoformat()
-        prompt = PRE_EXIT_PROMPT.format(current_time=current_time)
+        prompt = PRE_EXIT_PROMPT.format(
+            current_time=current_time,
+            bandit_recommendations=bandit_recommendations,
+        )
         print("\n[timeout] Session idle — running pre-exit flow...")
         answer = self.run(prompt)
         print(f"\nAgent: {answer}")
         return answer
+
+    # ------------------------------------------------------------------
+    # Conversation summary generation
+    # ------------------------------------------------------------------
+
+    def _format_conversation_for_summary(self) -> str:
+        """Convert conversation messages to a readable transcript for summarization."""
+        lines = []
+        for msg in self._serialize_messages():
+            role = msg.get("role", "")
+            content = msg.get("content")
+            if role == "system" or role == "tool" or content is None:
+                continue
+            if isinstance(content, list):
+                text_parts = [c.get("text", "") for c in content if c.get("type") == "text"]
+                text = " ".join(text_parts)
+                if text:
+                    lines.append(f"{role.upper()}: {text}")
+            else:
+                lines.append(f"{role.upper()}: {content}")
+        return "\n\n".join(lines)
+
+    def generate_summary(self) -> str:
+        """Generate a summary of the current conversation via a separate LLM call."""
+        conversation_text = self._format_conversation_for_summary()
+
+        messages = [
+            {"role": "user", "content": f"{conversation_text}\n\n{SUMMARY_PROMPT}"},
+        ]
+
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+        )
+        return response.choices[0].message.content
+
+    # ------------------------------------------------------------------
+    # Summary persistence
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _summary_path(session_id: str) -> str:
+        return os.path.join(SESSIONS_DIR, f"{session_id}_summary.json")
+
+    @staticmethod
+    def load_summary(session_id: str) -> str:
+        """Load the most recent chat summary from disk. Returns empty string if none."""
+        path = Agent._summary_path(session_id)
+        if not os.path.exists(path):
+            return ""
+        try:
+            with open(path, "r") as f:
+                data = json.load(f)
+            return data.get("summary", "")
+        except (json.JSONDecodeError, IOError):
+            return ""
+
+    @staticmethod
+    def save_summary(session_id: str, summary: str) -> None:
+        """Save chat summary to disk."""
+        os.makedirs(SESSIONS_DIR, exist_ok=True)
+        path = Agent._summary_path(session_id)
+        with open(path, "w") as f:
+            json.dump({
+                "summary": summary,
+                "generated_at": datetime.now().astimezone().isoformat(),
+            }, f, indent=2)
+
+    def archive_session(self) -> None:
+        """Archive the current session file with a timestamp suffix."""
+        if not self.session_id:
+            return
+        path = self._session_path()
+        if not os.path.exists(path):
+            return
+        now_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        archive_path = os.path.join(SESSIONS_DIR, f"{self.session_id}_{now_str}.json")
+        os.rename(path, archive_path)
+        print(f"[archive] Session archived: {archive_path}")

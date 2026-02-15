@@ -15,6 +15,8 @@ from fastapi import FastAPI, Request
 from pydantic import BaseModel
 from slack_sdk import WebClient
 
+import bandit
+
 load_dotenv()
 
 SLACK_BOT_TOKEN = os.environ["SLACK_BOT_TOKEN"]
@@ -38,6 +40,10 @@ _agent_lock = asyncio.Lock()
 # Idle timeout tracking
 _last_message_time: float = 0.0
 _is_sleeping: bool = False
+
+# Bandit reward tracking
+_last_notification_time: float = 0.0
+_last_notification_arm: tuple[int, int] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -112,15 +118,28 @@ def _clear_queue_for_session(session_id: str) -> None:
 
 
 async def _handle_message(channel: str, text: str, images: list[bytes] | None = None) -> None:
-    global _last_message_time, _is_sleeping
+    global _last_message_time, _is_sleeping, _last_notification_time, _last_notification_arm
     from agent import Agent
     from tools import set_current_session_id
 
     async with _agent_lock:
         try:
             _last_message_time = time.time()
+            now_dt = datetime.now().astimezone()
 
-            # Wake up if sleeping — clear pending notifications
+            # Record bandit rewards
+            if _is_sleeping and _last_notification_time > 0:
+                # User responded — check if within 10 min of last notification
+                if time.time() - _last_notification_time <= 600 and _last_notification_arm:
+                    bandit.update_arm(*_last_notification_arm, reward=1.0)
+                    print(f"[bandit] Notification response reward: arm {_last_notification_arm}")
+                _last_notification_time = 0.0
+                _last_notification_arm = None
+            elif not _is_sleeping:
+                # Organic chat — reward current time slot
+                bandit.update_arm(now_dt.weekday(), now_dt.hour, reward=0.5)
+
+            # Wake up if sleeping — start fresh conversation with summary context
             if _is_sleeping:
                 _is_sleeping = False
                 _clear_queue_for_session(SLACK_SESSION_ID)
@@ -128,7 +147,18 @@ async def _handle_message(channel: str, text: str, images: list[bytes] | None = 
 
             loop = asyncio.get_running_loop()
             set_current_session_id(SLACK_SESSION_ID)
-            agent = Agent(session_id=SLACK_SESSION_ID)
+
+            # Check if we need to start a fresh conversation with summary
+            session_path = os.path.join(
+                os.path.dirname(__file__), "sessions", f"{SLACK_SESSION_ID}.json"
+            )
+            if not os.path.exists(session_path):
+                # No active session — start fresh with summary context
+                summary = Agent.load_summary(SLACK_SESSION_ID)
+                agent = Agent(session_id=SLACK_SESSION_ID, chat_summary=summary or None)
+            else:
+                # Active session exists — continue mid-conversation
+                agent = Agent(session_id=SLACK_SESSION_ID)
 
             response = await loop.run_in_executor(
                 None, lambda: agent.run(text, images=images or None)
@@ -191,9 +221,13 @@ async def poll_queue(dm_channel: str) -> None:
                 continue
 
             if ts <= now:
+                global _last_notification_time, _last_notification_arm
                 msg = f":bell: *Reminder:* {entry['message']}"
                 slack_client.chat_postMessage(channel=dm_channel, text=msg)
                 print(f"[notification] sent: {entry['message']}")
+                # Track for bandit reward
+                _last_notification_time = time.time()
+                _last_notification_arm = (now.astimezone().weekday(), now.astimezone().hour)
             else:
                 remaining.append(entry)
 
@@ -231,7 +265,22 @@ async def _idle_monitor(dm_channel: str) -> None:
                 set_current_session_id(SLACK_SESSION_ID)
                 agent = Agent(session_id=SLACK_SESSION_ID)
 
-                response = await loop.run_in_executor(None, agent.run_pre_exit)
+                recommendations = bandit.get_recommendations()
+                rec_text = bandit.format_recommendations(recommendations)
+                response = await loop.run_in_executor(
+                    None, lambda: agent.run_pre_exit(bandit_recommendations=rec_text)
+                )
+
+                # Generate conversation summary and archive session
+                try:
+                    new_summary = await loop.run_in_executor(
+                        None, agent.generate_summary
+                    )
+                    Agent.save_summary(SLACK_SESSION_ID, new_summary)
+                    agent.archive_session()
+                    print(f"[summary] Conversation summarized and session archived")
+                except Exception as e:
+                    print(f"[warning] Summary generation failed: {e}")
 
                 _is_sleeping = True
 

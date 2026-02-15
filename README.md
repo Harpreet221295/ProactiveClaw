@@ -65,6 +65,7 @@ ProactiveClaw/
 │   ├── filesystem.py   # File system ops + search (7 tools)
 │   ├── data.py         # Structured data — JSON & CSV read/write (4 tools)
 │   └── charts.py       # generate_chart via matplotlib (1 tool)
+├── bandit.py           # Multi-armed bandit for adaptive notification scheduling
 ├── agent.py            # Agent class with persistence + pre-exit flow
 ├── main.py             # CLI entrypoint with timeout + session management
 ├── scheduler.py        # FastAPI server + background queue poller (CLI mode)
@@ -222,19 +223,37 @@ Then just DM the bot in Slack. All conversations share a single persistent sessi
 4. **Subscribe to bot events** — add `message.im`
 5. **Install to workspace** — copy the Bot User OAuth Token and Signing Secret into your `.env`
 
-## Notification Time Horizons
+## Adaptive Notification Scheduling (Multi-Armed Bandit)
 
-When the agent times out, the LLM schedules exactly 5 notifications:
+Instead of using fixed time horizons, ProactiveClaw learns when you're most likely to respond using a **multi-armed bandit (MAB)** algorithm.
 
-| # | Window | Purpose |
-|---|--------|---------|
-| 1 | 15–30 min | "Welcome back" nudge summarizing where you left off |
-| 2 | 1–2 hours | Follow-up on the most recent topic |
-| 3 | 3–6 hours | Check for updates on something you researched |
-| 4 | 8–12 hours | End-of-day or next-morning recap |
-| 5 | 18–24 hours | Next-day reminder or general re-engagement |
+### How It Works
 
-All timestamps are generated with your local timezone offset (e.g. `-08:00` for PST) so they fire at the correct time regardless of timezone.
+- **168 arms** — one for each (day_of_week, hour) combination across the week
+- **Rewards** — responding to a notification within 10 minutes gives reward 1.0; starting an organic chat gives reward 0.5
+- **Time-decayed updates** — recent interactions matter more than old ones. Arms unused for ~10 days effectively reset to 0
+- **Top-K recommendations** — the highest-scoring time slots are passed to the LLM, which makes the final scheduling decision
+
+The update rule uses exponential decay:
+```
+decay = exp(-lambda * days_since_last_update)
+Q[arm] = decay * Q_old + (1 - decay) * reward
+```
+
+### Cold Start
+
+When no data exists yet (fresh install), all arms are at 0 and no recommendations are generated. The LLM falls back to its own judgment — the same behavior as before the MAB was added.
+
+### State Persistence
+
+Bandit state is stored in `bandit_state.json` (gitignored) and persists across server restarts. The file contains Q-values, last-updated timestamps, and the decay parameter lambda (default: 0.1).
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `bandit.py` | MAB model — update, recommend, save/load state |
+| `bandit_state.json` | Runtime state (gitignored) |
 
 ## API Endpoint
 
