@@ -1,0 +1,18 @@
+[
+  {
+    "id": "cron_c442",
+    "time": "21:30",
+    "days": [
+      "monday",
+      "tuesday",
+      "wednesday",
+      "thursday",
+      "friday",
+      "saturday",
+      "sunday"
+    ],
+    "task": "Search the web for the top 10 most relevant news items about \"Physical AI\" (robotics, soft robotics, embodied AI, physical intelligence). Deliver a short 2\u20133 sentence *story-style* brief in simple language with one or two simple examples, then a numbered list (1\u201310) with headline, source, URL, and a 1\u20132 sentence summary for each. Prefer credible sources (major outlets, arXiv, conference pages, lab blogs).",
+    "created_at": "2026-02-17T22:03:20.104907-08:00",
+    "last_run": "2026-02-18T21:30:28.519955-08:00"
+  }
+]

@@ -9,3 +9,4 @@ requests
 slack_sdk
 matplotlib
 pandas
+mem0ai

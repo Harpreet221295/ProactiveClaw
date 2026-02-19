@@ -65,6 +65,7 @@ ProactiveClaw/
 │   ├── filesystem.py   # File system ops + search (7 tools)
 │   ├── data.py         # Structured data — JSON & CSV read/write (4 tools)
 │   └── charts.py       # generate_chart via matplotlib (1 tool)
+├── reengagement.json   # Created at runtime — re-engagement DM state + history
 ├── bandit.py           # Multi-armed bandit for adaptive notification scheduling
 ├── agent.py            # Agent class with persistence + pre-exit flow
 ├── main.py             # CLI entrypoint with timeout + session management
@@ -78,12 +79,12 @@ ProactiveClaw/
 
 | File | Purpose |
 |------|---------|
-| **`prompts.py`** | Contains `SYSTEM_PROMPT` (agent behavior rules) and `PRE_EXIT_PROMPT` (instructs the LLM to generate 5 timezone-aware notifications across different time horizons) |
+| **`prompts.py`** | Contains `SYSTEM_PROMPT` (agent behavior rules), `PRE_EXIT_PROMPT` (instructs the LLM to generate timezone-aware notifications), and `REENGAGEMENT_PROMPT` (instructs a fresh agent to craft contextual re-engagement DMs) |
 | **`tools/`** | Modular package with 29 tools across 10 modules. Includes web search, scheduling, Google Calendar, Gmail, Notion, file system operations (with search and pagination for large files), structured data (JSON/CSV with row-based pagination), and chart generation. Re-exports `TOOLS_SCHEMA`, `dispatch_tool_call`, `set_current_session_id`, and `QUEUE_FILE` from `__init__.py` |
 | **`agent.py`** | The `Agent` class — manages conversation history (text + images), serializes OpenAI message objects to JSON for persistence, saves/loads sessions from disk, and runs the pre-exit flow on timeout |
 | **`main.py`** | CLI entrypoint — uses `select.select()` for input with timeout (macOS/Linux), manages session selection, clears stale queue entries on resume |
 | **`scheduler.py`** | FastAPI app that runs independently — polls `queue.json` every 30s and prints due notifications to the terminal. Used in CLI mode only |
-| **`slack_server.py`** | Slack bot server — receives DMs via Slack Events API, runs the agent, posts responses back as DMs. Also polls `queue.json` and delivers due notifications as Slack DMs |
+| **`slack_server.py`** | Slack bot server — receives DMs via Slack Events API, runs the agent, posts responses back as DMs. Polls `queue.json` for notifications, runs cron jobs, and monitors for re-engagement DMs when the user goes silent |
 
 ## Setup
 
@@ -254,6 +255,52 @@ Bandit state is stored in `bandit_state.json` (gitignored) and persists across s
 |------|---------|
 | `bandit.py` | MAB model — update, recommend, save/load state |
 | `bandit_state.json` | Runtime state (gitignored) |
+
+## Re-engagement DMs
+
+When the agent sleeps and all scheduled invocations expire with no user response, the agent doesn't just go silent forever. A **re-engagement monitor** periodically wakes up, reviews past context using long-term memory, and sends a proactive DM to bring the user back.
+
+### Timeline
+
+```
+User idle → pre-exit → invocations scheduled → invocations fire/expire → user ignores all
+                                                └── re-engagement timer starts here
+```
+
+### Backoff Schedule
+
+| Attempt | Interval after last |
+|---------|-------------------|
+| 1st     | 72 hours          |
+| 2nd     | 1 week            |
+| 3rd     | 2 weeks           |
+| 4th+    | 1 month (cap)     |
+
+### How It Works
+
+1. `poll_notifications()` detects when the invocation queue drains to empty while sleeping — records `invocations_exhausted_at` in `reengagement.json`
+2. `_reengagement_monitor()` checks every 5 minutes whether the backoff interval has elapsed
+3. Once eligible, it consults the **multi-armed bandit** — the DM is only sent when the current (day, hour) slot matches a top-5 recommended time. If no bandit data exists (cold start), it sends immediately
+4. A **fresh agent** (no session history) spawns with bandit recommendations in the prompt, queries long-term memory for past topics, and crafts a contextual DM
+5. The DM is sent via Slack, and the attempt is logged to `reengagement.json` so future DMs avoid repeating topics
+6. If the user responds at any point, `_reset_reengagement()` clears the timer and resets the attempt counter (message history is preserved)
+
+### State File
+
+`reengagement.json` tracks the re-engagement state:
+
+```json
+{
+  "invocations_exhausted_at": "2026-02-16T19:10:00-08:00",
+  "attempt_number": 1,
+  "messages": [
+    {
+      "sent_at": "2026-02-19T19:10:00-08:00",
+      "message": "Hey! I noticed you were working on tax filing last time..."
+    }
+  ]
+}
+```
 
 ## API Endpoint
 

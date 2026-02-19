@@ -2,6 +2,9 @@ import os
 from pathlib import Path
 
 QUEUE_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "queue.json")
+REMINDERS_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "reminders.json")
+CRON_JOBS_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "cron_jobs.json")
+REENGAGEMENT_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "reengagement.json")
 
 # Agent file system base directory
 _AGENT_FS_BASE = Path(__file__).parent.parent / "agent_file_system"

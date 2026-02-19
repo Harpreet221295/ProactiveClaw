@@ -97,7 +97,8 @@ class Agent:
         else:
             self.messages.append({"role": "user", "content": user_message})
 
-        while True:
+        max_rounds = 15
+        for _round in range(max_rounds):
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=self._serialize_messages(),
@@ -118,6 +119,17 @@ class Agent:
                     "tool_call_id": tool_call.id,
                     "content": result,
                 })
+
+        # If we exhausted all rounds, force a final response without tools
+        print(f"  [warning] Hit {max_rounds} tool rounds — forcing final response")
+        response = self.client.chat.completions.create(
+            model=self.model,
+            messages=self._serialize_messages(),
+        )
+        message = response.choices[0].message
+        self.messages.append(message)
+        self.save_session()
+        return message.content or "Sorry, I got stuck processing that. Could you rephrase?"
 
     def format_conversation_for_memory(self) -> list[dict]:
         """Convert conversation to SimpleMem dialogue format.
@@ -143,12 +155,14 @@ class Agent:
             dialogues.append({"role": role, "content": text})
         return dialogues
 
-    def run_pre_exit(self, bandit_recommendations: str = "") -> str:
+    def run_pre_exit(self, bandit_recommendations: str = "", existing_reminders: str = "", previous_invocations: str = "") -> str:
         now_local = datetime.now().astimezone()
         current_time = now_local.isoformat()
         prompt = PRE_EXIT_PROMPT.format(
             current_time=current_time,
             bandit_recommendations=bandit_recommendations,
+            existing_reminders=existing_reminders,
+            previous_invocations=previous_invocations,
         )
         print("\n[timeout] Session idle — running pre-exit flow...")
         answer = self.run(prompt)

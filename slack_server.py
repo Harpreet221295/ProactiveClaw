@@ -27,6 +27,10 @@ SLACK_SESSION_ID = f"slack_{SLACK_USER_ID}"
 slack_client = WebClient(token=SLACK_BOT_TOKEN)
 
 QUEUE_FILE = os.path.join(os.path.dirname(__file__), "queue.json")
+REMINDERS_FILE = os.path.join(os.path.dirname(__file__), "reminders.json")
+CRON_JOBS_FILE = os.path.join(os.path.dirname(__file__), "cron_jobs.json")
+REENGAGEMENT_FILE = os.path.join(os.path.dirname(__file__), "reengagement.json")
+REENGAGEMENT_INTERVALS = [72 * 3600, 7 * 86400, 14 * 86400, 30 * 86400]  # 72h, 1w, 2w, 1mo
 POLL_INTERVAL = 30
 AGENT_TIMEOUT = int(os.getenv("AGENT_TIMEOUT", "300"))
 
@@ -44,6 +48,9 @@ _is_sleeping: bool = False
 # Bandit reward tracking
 _last_notification_time: float = 0.0
 _last_notification_arm: tuple[int, int] | None = None
+
+# Previous invocation queue — stashed on wake so next pre-exit has context
+_previous_invocations: list[dict] = []
 
 
 # ---------------------------------------------------------------------------
@@ -103,18 +110,46 @@ def _find_output_files(response_text: str) -> list[str]:
     return paths
 
 
-def _clear_queue_for_session(session_id: str) -> None:
-    """Remove all queued notifications for the given session."""
-    if not os.path.exists(QUEUE_FILE):
-        return
-    with open(QUEUE_FILE, "r") as f:
+def _clear_invocation_queue() -> None:
+    """Clear the invocation queue on wake, stashing previous entries for next pre-exit."""
+    global _previous_invocations
+    _previous_invocations = _load_json_file(QUEUE_FILE)
+    if os.path.exists(QUEUE_FILE):
+        with open(QUEUE_FILE, "w") as f:
+            json.dump([], f)
+
+
+def _load_reengagement_state() -> dict:
+    if not os.path.exists(REENGAGEMENT_FILE):
+        return {"invocations_exhausted_at": None, "attempt_number": 0, "messages": []}
+    with open(REENGAGEMENT_FILE, "r") as f:
         try:
-            queue = json.load(f)
+            return json.load(f)
         except json.JSONDecodeError:
-            queue = []
-    queue = [entry for entry in queue if entry.get("session_id") != session_id]
-    with open(QUEUE_FILE, "w") as f:
-        json.dump(queue, f, indent=2)
+            return {"invocations_exhausted_at": None, "attempt_number": 0, "messages": []}
+
+
+def _save_reengagement_state(state: dict) -> None:
+    with open(REENGAGEMENT_FILE, "w") as f:
+        json.dump(state, f, indent=2)
+
+
+def _mark_invocations_exhausted(now: datetime) -> None:
+    """Record when the invocation queue drains to empty while sleeping."""
+    state = _load_reengagement_state()
+    if not state.get("invocations_exhausted_at"):
+        state["invocations_exhausted_at"] = now.isoformat()
+        _save_reengagement_state(state)
+        print(f"[reengagement] Invocations exhausted at {now.isoformat()}")
+
+
+def _reset_reengagement() -> None:
+    """Reset re-engagement timer on user wake. Preserves message history."""
+    state = _load_reengagement_state()
+    state["invocations_exhausted_at"] = None
+    state["attempt_number"] = 0
+    _save_reengagement_state(state)
+    print("[reengagement] Reset — user responded")
 
 
 async def _handle_message(channel: str, text: str, images: list[bytes] | None = None) -> None:
@@ -142,8 +177,9 @@ async def _handle_message(channel: str, text: str, images: list[bytes] | None = 
             # Wake up if sleeping — start fresh conversation with summary context
             if _is_sleeping:
                 _is_sleeping = False
-                _clear_queue_for_session(SLACK_SESSION_ID)
-                print(f"[wake] Agent woke up — cleared notification queue")
+                _clear_invocation_queue()
+                _reset_reengagement()
+                print(f"[wake] Agent woke up — cleared invocation queue (reminders preserved)")
 
             loop = asyncio.get_running_loop()
             set_current_session_id(SLACK_SESSION_ID)
@@ -187,52 +223,96 @@ async def _handle_message(channel: str, text: str, images: list[bytes] | None = 
 # Notification queue polling (ported from scheduler.py)
 # ---------------------------------------------------------------------------
 
-def load_queue() -> list[dict]:
-    if not os.path.exists(QUEUE_FILE):
+STALE_THRESHOLD_SECONDS = 600  # 10 minutes
+
+
+def _load_json_file(path: str) -> list[dict]:
+    if not os.path.exists(path):
         return []
-    with open(QUEUE_FILE, "r") as f:
+    with open(path, "r") as f:
         try:
             return json.load(f)
         except json.JSONDecodeError:
             return []
 
 
+def _save_json_file(path: str, data: list[dict]) -> None:
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def load_queue() -> list[dict]:
+    return _load_json_file(QUEUE_FILE)
+
+
 def save_queue(queue: list[dict]) -> None:
-    with open(QUEUE_FILE, "w") as f:
-        json.dump(queue, f, indent=2)
+    _save_json_file(QUEUE_FILE, queue)
 
 
-async def poll_queue(dm_channel: str) -> None:
+async def poll_notifications(dm_channel: str) -> None:
     while True:
         await asyncio.sleep(POLL_INTERVAL)
-        queue = load_queue()
-        if not queue:
-            continue
-
         now = datetime.now(timezone.utc)
-        remaining = []
-        for entry in queue:
-            try:
-                ts = datetime.fromisoformat(entry["timestamp"])
-                if ts.tzinfo is None:
-                    ts = ts.astimezone()
-            except (ValueError, KeyError):
-                print(f"[warning] Dropping malformed queue entry: {entry}")
-                continue
+        now_local = now.astimezone()
+        global _last_notification_time, _last_notification_arm
 
-            if ts <= now:
-                global _last_notification_time, _last_notification_arm
-                msg = f":bell: *Reminder:* {entry['message']}"
-                slack_client.chat_postMessage(channel=dm_channel, text=msg)
-                print(f"[notification] sent: {entry['message']}")
-                # Track for bandit reward
-                _last_notification_time = time.time()
-                _last_notification_arm = (now.astimezone().weekday(), now.astimezone().hour)
-            else:
-                remaining.append(entry)
+        # --- Poll reminders (always deliver, even if late) ---
+        reminders = _load_json_file(REMINDERS_FILE)
+        if reminders:
+            remaining_reminders = []
+            for entry in reminders:
+                try:
+                    ts = datetime.fromisoformat(entry["timestamp"])
+                    if ts.tzinfo is None:
+                        ts = ts.astimezone()
+                except (ValueError, KeyError):
+                    print(f"[warning] Dropping malformed reminder: {entry}")
+                    continue
 
-        if len(remaining) != len(queue):
-            save_queue(remaining)
+                if ts <= now:
+                    msg = f":bell: *Reminder:* {entry['message']}"
+                    slack_client.chat_postMessage(channel=dm_channel, text=msg)
+                    print(f"[reminder] delivered: {entry['message']}")
+                    _last_notification_time = time.time()
+                    _last_notification_arm = (now_local.weekday(), now_local.hour)
+                else:
+                    remaining_reminders.append(entry)
+
+            if len(remaining_reminders) != len(reminders):
+                _save_json_file(REMINDERS_FILE, remaining_reminders)
+
+        # --- Poll invocation queue (drop if >10 min stale) ---
+        queue = _load_json_file(QUEUE_FILE)
+        if queue:
+            remaining_queue = []
+            for entry in queue:
+                try:
+                    ts = datetime.fromisoformat(entry["timestamp"])
+                    if ts.tzinfo is None:
+                        ts = ts.astimezone()
+                except (ValueError, KeyError):
+                    print(f"[warning] Dropping malformed queue entry: {entry}")
+                    continue
+
+                if ts <= now:
+                    age_seconds = (now - ts).total_seconds()
+                    if age_seconds <= STALE_THRESHOLD_SECONDS:
+                        msg = f":loudspeaker: {entry['message']}"
+                        slack_client.chat_postMessage(channel=dm_channel, text=msg)
+                        print(f"[invocation] sent: {entry['message']}")
+                        _last_notification_time = time.time()
+                        _last_notification_arm = (now_local.weekday(), now_local.hour)
+                    else:
+                        print(f"[invocation] dropped stale ({age_seconds:.0f}s old): {entry['message']}")
+                else:
+                    remaining_queue.append(entry)
+
+            if len(remaining_queue) != len(queue):
+                _save_json_file(QUEUE_FILE, remaining_queue)
+
+            # Detect queue exhaustion: queue was non-empty, now drained, agent sleeping
+            if not remaining_queue and _is_sleeping:
+                _mark_invocations_exhausted(now_local)
 
 
 # ---------------------------------------------------------------------------
@@ -267,8 +347,29 @@ async def _idle_monitor(dm_channel: str) -> None:
 
                 recommendations = bandit.get_recommendations()
                 rec_text = bandit.format_recommendations(recommendations)
+
+                # Load existing reminders so the agent avoids duplicating them
+                from tools.scheduling import load_reminders
+                existing = load_reminders()
+                if existing:
+                    lines = [f"• {r['timestamp']} — {r['message']}" for r in existing]
+                    reminders_text = "The following reminders are already scheduled:\n" + "\n".join(lines)
+                else:
+                    reminders_text = "No reminders are currently scheduled."
+
+                # Build previous invocations context
+                if _previous_invocations:
+                    inv_lines = [f"• {inv['timestamp']} — {inv['message']}" for inv in _previous_invocations]
+                    prev_invocations_text = "The following invocations were scheduled in the previous session:\n" + "\n".join(inv_lines)
+                else:
+                    prev_invocations_text = "No invocations were scheduled in the previous session."
+
                 response = await loop.run_in_executor(
-                    None, lambda: agent.run_pre_exit(bandit_recommendations=rec_text)
+                    None, lambda: agent.run_pre_exit(
+                        bandit_recommendations=rec_text,
+                        existing_reminders=reminders_text,
+                        previous_invocations=prev_invocations_text,
+                    )
                 )
 
                 # Generate conversation summary and archive session
@@ -284,7 +385,7 @@ async def _idle_monitor(dm_channel: str) -> None:
                         dialogues = agent.format_conversation_for_memory()
                         if dialogues:
                             store_dialogues(dialogues)
-                            print(f"[memory] Stored {len(dialogues)} dialogue turns in SimpleMem")
+                            print(f"[memory] Stored {len(dialogues)} dialogue turns in Mem0")
                     except Exception as mem_err:
                         print(f"[warning] SimpleMem storage failed: {mem_err}")
 
@@ -313,6 +414,160 @@ async def _idle_monitor(dm_channel: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Cron job polling
+# ---------------------------------------------------------------------------
+
+def _save_cron_jobs(jobs: list[dict]) -> None:
+    with open(CRON_JOBS_FILE, "w") as f:
+        json.dump(jobs, f, indent=2)
+
+
+async def _poll_cron_jobs(dm_channel: str) -> None:
+    """Poll cron_jobs.json every 60s and execute due jobs with a fresh agent."""
+    from agent import Agent, DEFAULT_MODEL
+    from prompts import CRON_JOB_PROMPT
+
+    while True:
+        await asyncio.sleep(60)
+        try:
+            from tools.scheduling import load_cron_jobs, save_cron_jobs
+
+            now = datetime.now().astimezone()
+            current_day = now.strftime("%A").lower()
+            current_time = now.strftime("%H:%M")
+
+            jobs = load_cron_jobs()
+            for job in jobs:
+                # Skip if not scheduled for today
+                if job.get("days") and current_day not in job["days"]:
+                    continue
+                # Skip if not the right time
+                if job["time"] != current_time:
+                    continue
+                # Skip if already ran this cycle (within 2 minutes)
+                if job.get("last_run"):
+                    last = datetime.fromisoformat(job["last_run"])
+                    if (now - last).total_seconds() < 120:
+                        continue
+
+                # Update last_run immediately to prevent double-fire
+                job["last_run"] = now.isoformat()
+                save_cron_jobs(jobs)
+
+                print(f"[cron] Executing job {job['id']}: {job['task'][:80]}")
+
+                # Execute with a fresh agent (no session_id = no history)
+                async with _agent_lock:
+                    loop = asyncio.get_running_loop()
+                    agent = Agent(model=DEFAULT_MODEL)
+                    cron_prompt = CRON_JOB_PROMPT.format(
+                        current_time=now.isoformat(),
+                        task=job["task"],
+                    )
+                    response = await loop.run_in_executor(
+                        None, lambda: agent.run(cron_prompt)
+                    )
+
+                # Deliver result via DM
+                header = f":gear: *Scheduled task:* {job['task'][:80]}"
+                slack_client.chat_postMessage(channel=dm_channel, text=header)
+                for chunk in [response[i:i+3900] for i in range(0, len(response), 3900)]:
+                    slack_client.chat_postMessage(channel=dm_channel, text=chunk)
+
+                # Upload any files the agent created
+                for file_path in _find_output_files(response):
+                    slack_client.files_upload_v2(
+                        channel=dm_channel,
+                        file=file_path,
+                        title=os.path.basename(file_path),
+                    )
+
+                print(f"[cron] Job {job['id']} completed")
+
+        except Exception as e:
+            print(f"[cron] Error in cron polling: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Re-engagement monitor
+# ---------------------------------------------------------------------------
+
+async def _reengagement_monitor(dm_channel: str) -> None:
+    """Periodically check if re-engagement DM should be sent after invocations exhaust."""
+    from agent import Agent, DEFAULT_MODEL
+    from prompts import REENGAGEMENT_PROMPT
+
+    while True:
+        await asyncio.sleep(300)  # check every 5 minutes
+
+        if not _is_sleeping:
+            continue
+
+        try:
+            state = _load_reengagement_state()
+            if not state.get("invocations_exhausted_at"):
+                continue
+
+            exhausted_at = datetime.fromisoformat(state["invocations_exhausted_at"])
+            attempt = state.get("attempt_number", 0)
+            interval = REENGAGEMENT_INTERVALS[min(attempt, len(REENGAGEMENT_INTERVALS) - 1)]
+            now = datetime.now().astimezone()
+
+            if (now - exhausted_at).total_seconds() < interval:
+                continue
+
+            # Backoff elapsed — check bandit for optimal send time
+            recommendations = bandit.get_recommendations(top_k=5)
+            if recommendations:
+                current_day = now.weekday()
+                current_hour = now.hour
+                # Check if current (day, hour) is among top recommended slots
+                top_slots = {(r["day"], r["hour"]) for r in recommendations}
+                if (current_day, current_hour) not in top_slots:
+                    # Not an optimal time — skip and check again next cycle
+                    continue
+                print(f"[reengagement] Current slot ({current_day}, {current_hour}) matches bandit recommendation — proceeding")
+
+            # Time to re-engage — spawn fresh agent
+            rec_text = bandit.format_recommendations(recommendations)
+            print(f"[reengagement] Sending re-engagement DM (attempt {attempt + 1})")
+
+            # Build context from previous re-engagement messages
+            prev_messages = state.get("messages", [])
+            if prev_messages:
+                prev_lines = [f"• {m['sent_at']}: {m['message']}" for m in prev_messages]
+                prev_text = "You have already sent these re-engagement DMs (do NOT repeat topics):\n" + "\n".join(prev_lines)
+            else:
+                prev_text = "This is your first re-engagement DM — no previous ones sent."
+
+            async with _agent_lock:
+                loop = asyncio.get_running_loop()
+                agent = Agent(model=DEFAULT_MODEL)  # fresh, no session
+                prompt = REENGAGEMENT_PROMPT.format(
+                    current_time=now.isoformat(),
+                    previous_reengagement_dms=prev_text,
+                    bandit_recommendations=rec_text,
+                )
+                response = await loop.run_in_executor(None, lambda: agent.run(prompt))
+
+            # Send DM
+            slack_client.chat_postMessage(channel=dm_channel, text=response[:3900])
+            print(f"[reengagement] DM sent (attempt {attempt + 1})")
+
+            # Update state: increment attempt, advance clock for next interval
+            state["attempt_number"] = attempt + 1
+            state["invocations_exhausted_at"] = now.isoformat()
+            state.setdefault("messages", []).append({
+                "sent_at": now.isoformat(),
+                "message": response[:500],
+            })
+            _save_reengagement_state(state)
+
+        except Exception as e:
+            print(f"[reengagement] Error: {e}")
+
+
+# ---------------------------------------------------------------------------
 # FastAPI app
 # ---------------------------------------------------------------------------
 
@@ -329,14 +584,20 @@ async def lifespan(app: FastAPI):
     dm_channel = resp["channel"]["id"]
     print(f"Slack DM channel: {dm_channel}")
 
-    queue_task = asyncio.create_task(poll_queue(dm_channel))
+    queue_task = asyncio.create_task(poll_notifications(dm_channel))
     idle_task = asyncio.create_task(_idle_monitor(dm_channel))
-    print(f"Scheduler running — polling {QUEUE_FILE} every {POLL_INTERVAL}s")
+    cron_task = asyncio.create_task(_poll_cron_jobs(dm_channel))
+    reengagement_task = asyncio.create_task(_reengagement_monitor(dm_channel))
+    print(f"Scheduler running — polling reminders + invocations every {POLL_INTERVAL}s")
     print(f"Idle monitor running — timeout {AGENT_TIMEOUT}s")
+    print(f"Cron job poller running — checking every 60s")
+    print(f"Re-engagement monitor running — checking every 5m")
     yield
     queue_task.cancel()
     idle_task.cancel()
-    for t in (queue_task, idle_task):
+    cron_task.cancel()
+    reengagement_task.cancel()
+    for t in (queue_task, idle_task, cron_task, reengagement_task):
         try:
             await t
         except asyncio.CancelledError:

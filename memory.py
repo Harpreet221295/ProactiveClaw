@@ -1,135 +1,116 @@
-"""SimpleMem MCP client — JSON-RPC 2.0 over Streamable HTTP."""
+"""Long-term agent memory backed by Mem0 with local embedded storage.
+
+Mem0 extracts facts from conversations, stores them in an embedded Qdrant
+vector DB on disk, and retrieves them via semantic search.  All data stays
+local — no cloud services, no MCP server, just a Python library.
+
+Requires: pip install mem0ai
+Requires: OPENAI_API_KEY in env (used for LLM extraction + embeddings)
+"""
 
 import os
-import uuid
 
-import requests
+_MEMORY_DIR = os.path.join(os.path.dirname(__file__), "mem0_data")
+_USER_ID = "default"
 
-_SIMPLEMEM_URL = os.getenv("SIMPLEMEM_URL", "")
-_SIMPLEMEM_TOKEN = os.getenv("SIMPLEMEM_TOKEN", "")
-
-_client: "SimpleMemClient | None" = None
+_mem: "Memory | None" = None
+_init_failed = False
 
 
-class SimpleMemClient:
-    def __init__(self, base_url: str, token: str):
-        self.base_url = base_url.rstrip("/")
-        self.token = token
-        self.session_id: str | None = None
-
-    def initialize(self) -> bool:
-        """Send MCP initialize handshake. Returns True on success."""
-        payload = {
-            "jsonrpc": "2.0",
-            "id": str(uuid.uuid4()),
-            "method": "initialize",
-            "params": {
-                "protocolVersion": "2025-03-26",
-                "capabilities": {},
-                "clientInfo": {"name": "ProactiveClaw", "version": "1.0.0"},
-            },
-        }
-        try:
-            resp = requests.post(
-                f"{self.base_url}/mcp",
-                json=payload,
-                headers=self._headers(),
-                timeout=10,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            self.session_id = resp.headers.get("Mcp-Session-Id")
-
-            # Send initialized notification
-            notif = {
-                "jsonrpc": "2.0",
-                "method": "notifications/initialized",
-            }
-            requests.post(
-                f"{self.base_url}/mcp",
-                json=notif,
-                headers=self._headers(),
-                timeout=10,
-            )
-            return "result" in data
-        except Exception as e:
-            print(f"[memory] MCP initialize failed: {e}")
-            return False
-
-    def call_tool(self, tool_name: str, arguments: dict) -> str:
-        """Call an MCP tool via JSON-RPC 2.0. Lazy-initializes if needed."""
-        if self.session_id is None:
-            if not self.initialize():
-                return "Error: SimpleMem is not available"
-
-        payload = {
-            "jsonrpc": "2.0",
-            "id": str(uuid.uuid4()),
-            "method": "tools/call",
-            "params": {
-                "name": tool_name,
-                "arguments": arguments,
-            },
-        }
-        try:
-            resp = requests.post(
-                f"{self.base_url}/mcp",
-                json=payload,
-                headers=self._headers(),
-                timeout=30,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            if "error" in data:
-                return f"Error: {data['error'].get('message', 'unknown error')}"
-            result = data.get("result", {})
-            content = result.get("content", [])
-            texts = [c.get("text", "") for c in content if c.get("type") == "text"]
-            return "\n".join(texts) if texts else str(result)
-        except Exception as e:
-            return f"Error: SimpleMem call failed: {e}"
-
-    def _headers(self) -> dict:
-        headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json, text/event-stream",
-        }
-        if self.token:
-            headers["Authorization"] = f"Bearer {self.token}"
-        if self.session_id:
-            headers["Mcp-Session-Id"] = self.session_id
-        return headers
-
-
-def _get_client() -> SimpleMemClient | None:
-    """Return the singleton client, or None if not configured."""
-    global _client
-    if not _SIMPLEMEM_URL:
+def _get_memory():
+    """Lazy-initialize the Mem0 Memory instance. Returns None on failure."""
+    global _mem, _init_failed
+    if _mem is not None:
+        return _mem
+    if _init_failed:
         return None
-    if _client is None:
-        _client = SimpleMemClient(_SIMPLEMEM_URL, _SIMPLEMEM_TOKEN)
-    return _client
+
+    if not os.getenv("OPENAI_API_KEY"):
+        _init_failed = True
+        return None
+
+    try:
+        from mem0 import Memory
+
+        os.makedirs(_MEMORY_DIR, exist_ok=True)
+
+        config = {
+            "llm": {
+                "provider": "openai",
+                "config": {
+                    "model": "gpt-4.1-mini",
+                    "temperature": 0.1,
+                },
+            },
+            "embedder": {
+                "provider": "openai",
+                "config": {
+                    "model": "text-embedding-3-small",
+                },
+            },
+            "vector_store": {
+                "provider": "qdrant",
+                "config": {
+                    "collection_name": "agent_memory",
+                    "path": _MEMORY_DIR,
+                    "on_disk": True,
+                    "embedding_model_dims": 1536,
+                },
+            },
+        }
+
+        _mem = Memory.from_config(config)
+        print(f"[memory] Mem0 initialized — storage at {_MEMORY_DIR}")
+        return _mem
+    except Exception as e:
+        print(f"[warning] Mem0 initialization failed: {e}")
+        _init_failed = True
+        return None
 
 
 def store_dialogues(dialogues: list[dict]) -> str:
-    """Store conversation dialogues in SimpleMem via memory_add_batch."""
-    client = _get_client()
-    if client is None:
-        return "SimpleMem not configured"
-    return client.call_tool("memory_add_batch", {"dialogues": dialogues})
+    """Store conversation dialogues in long-term memory.
+
+    dialogues: list of {"role": "user"|"assistant", "content": "..."}
+    """
+    mem = _get_memory()
+    if mem is None:
+        return "Long-term memory is not available."
+    try:
+        result = mem.add(dialogues, user_id=_USER_ID)
+        count = len(result.get("results", []))
+        return f"Stored {count} memory entries."
+    except Exception as e:
+        return f"Error storing memories: {e}"
 
 
 def query_memory(query: str) -> str:
     """Semantic search over long-term memory."""
-    client = _get_client()
-    if client is None:
-        return "Long-term memory is not configured."
-    return client.call_tool("memory_query", {"query": query})
+    mem = _get_memory()
+    if mem is None:
+        return "Long-term memory is not available."
+    try:
+        results = mem.search(query, user_id=_USER_ID, limit=10)
+        memories = results.get("results", [])
+        if not memories:
+            return "No relevant memories found."
+        lines = [m.get("memory", "") for m in memories if m.get("memory")]
+        return "\n".join(f"- {line}" for line in lines)
+    except Exception as e:
+        return f"Error querying memory: {e}"
 
 
 def retrieve_memory(query: str) -> str:
-    """Direct retrieval from long-term memory by topic/keyword."""
-    client = _get_client()
-    if client is None:
-        return "Long-term memory is not configured."
-    return client.call_tool("memory_retrieve", {"query": query})
+    """Retrieve memories by topic — same as query but with fewer results."""
+    mem = _get_memory()
+    if mem is None:
+        return "Long-term memory is not available."
+    try:
+        results = mem.search(query, user_id=_USER_ID, limit=5)
+        memories = results.get("results", [])
+        if not memories:
+            return "No relevant memories found."
+        lines = [m.get("memory", "") for m in memories if m.get("memory")]
+        return "\n".join(f"- {line}" for line in lines)
+    except Exception as e:
+        return f"Error retrieving memory: {e}"

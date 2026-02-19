@@ -2,7 +2,7 @@ import json
 
 from ._state import QUEUE_FILE, set_current_session_id
 from .web import tavily_search, SCHEMA as _web_schema
-from .scheduling import schedule_notifications, get_current_datetime, SCHEMA as _scheduling_schema
+from .scheduling import schedule_notifications, get_current_datetime, set_reminder, list_reminders, cancel_reminder, create_cron_job, list_cron_jobs, delete_cron_job, SCHEMA as _scheduling_schema
 from .calendar import list_calendar_events, create_calendar_event, update_calendar_event, delete_calendar_event, SCHEMA as _calendar_schema
 from .gmail import list_emails, read_email, send_email, reply_to_email, SCHEMA as _gmail_schema
 from .notion import search_notion, read_notion_page, create_notion_page, update_notion_page, query_notion_database, create_database_entry, SCHEMA as _notion_schema
@@ -27,6 +27,12 @@ TOOL_FUNCTIONS = {
     "tavily_search": tavily_search,
     "schedule_notifications": schedule_notifications,
     "get_current_datetime": get_current_datetime,
+    "set_reminder": set_reminder,
+    "list_reminders": list_reminders,
+    "cancel_reminder": cancel_reminder,
+    "create_cron_job": create_cron_job,
+    "list_cron_jobs": list_cron_jobs,
+    "delete_cron_job": delete_cron_job,
     "list_calendar_events": list_calendar_events,
     "create_calendar_event": create_calendar_event,
     "update_calendar_event": update_calendar_event,
