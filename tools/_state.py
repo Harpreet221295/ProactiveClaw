@@ -1,3 +1,4 @@
+import asyncio
 import os
 from pathlib import Path
 
@@ -11,6 +12,9 @@ _AGENT_FS_BASE = Path(__file__).parent.parent / "agent_file_system"
 _AGENT_FS_BASE.mkdir(exist_ok=True)
 
 _current_session_id: str | None = None
+
+# Event loop reference — set by slack_server lifespan, used by browser tool's sync-to-async bridge
+_event_loop: asyncio.AbstractEventLoop | None = None
 
 
 def set_current_session_id(session_id: str) -> None:

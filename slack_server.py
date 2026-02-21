@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 import requests as http_requests
 import uvicorn
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 from slack_sdk import WebClient
 
@@ -23,6 +23,7 @@ SLACK_BOT_TOKEN = os.environ["SLACK_BOT_TOKEN"]
 SLACK_SIGNING_SECRET = os.environ["SLACK_SIGNING_SECRET"]
 SLACK_USER_ID = os.environ["SLACK_USER_ID"]
 SLACK_SESSION_ID = f"slack_{SLACK_USER_ID}"
+BROWSER_TOKEN = os.getenv("BROWSER_TOKEN", "proactiveclaw_browser_token")
 
 slack_client = WebClient(token=SLACK_BOT_TOKEN)
 
@@ -51,6 +52,11 @@ _last_notification_arm: tuple[int, int] | None = None
 
 # Previous invocation queue — stashed on wake so next pre-exit has context
 _previous_invocations: list[dict] = []
+
+# Browser extension WebSocket state
+_extension_ws: WebSocket | None = None
+_pending_cdp: dict[str, asyncio.Future] = {}
+_cdp_counter: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -441,13 +447,19 @@ async def _poll_cron_jobs(dm_channel: str) -> None:
                 # Skip if not scheduled for today
                 if job.get("days") and current_day not in job["days"]:
                     continue
-                # Skip if not the right time
-                if job["time"] != current_time:
+                # Skip if current time hasn't reached the scheduled time yet
+                if current_time < job["time"]:
                     continue
-                # Skip if already ran this cycle (within 2 minutes)
+                # Skip if too far past scheduled time (>10 min) — avoids
+                # stale firing after sleep/restart
+                scheduled_h, scheduled_m = map(int, job["time"].split(":"))
+                scheduled_dt = now.replace(hour=scheduled_h, minute=scheduled_m, second=0, microsecond=0)
+                if (now - scheduled_dt).total_seconds() > 21600:  # 6 hours
+                    continue
+                # Skip if already ran today
                 if job.get("last_run"):
                     last = datetime.fromisoformat(job["last_run"])
-                    if (now - last).total_seconds() < 120:
+                    if last.date() == now.date():
                         continue
 
                 # Update last_run immediately to prevent double-fire
@@ -568,6 +580,47 @@ async def _reengagement_monitor(dm_channel: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Browser extension WebSocket relay
+# ---------------------------------------------------------------------------
+
+async def send_cdp_command(method: str, params: dict | None = None, timeout: float = 30) -> dict:
+    """Send a CDP command to the browser extension and await the result."""
+    global _cdp_counter
+
+    # Wait briefly for extension to reconnect (MV3 service worker may restart)
+    print(f"[browser-debug] send_cdp_command called: method={method}, _extension_ws={_extension_ws is not None}")
+    if _extension_ws is None:
+        print("[browser-debug] Waiting for extension to reconnect...")
+        for i in range(10):
+            await asyncio.sleep(0.5)
+            if _extension_ws is not None:
+                print(f"[browser-debug] Extension reconnected after {i+1} attempts")
+                break
+        if _extension_ws is None:
+            print("[browser-debug] Extension still not connected after 5s wait")
+            raise ConnectionError("Browser extension is not connected")
+
+    _cdp_counter += 1
+    cmd_id = str(_cdp_counter)
+    future: asyncio.Future = asyncio.get_running_loop().create_future()
+    _pending_cdp[cmd_id] = future
+
+    await _extension_ws.send_json({
+        "type": "cdp_command",
+        "id": cmd_id,
+        "method": method,
+        "params": params or {},
+    })
+
+    try:
+        result = await asyncio.wait_for(future, timeout=timeout)
+        return result
+    except asyncio.TimeoutError:
+        _pending_cdp.pop(cmd_id, None)
+        raise TimeoutError(f"CDP command '{method}' timed out after {timeout}s")
+
+
+# ---------------------------------------------------------------------------
 # FastAPI app
 # ---------------------------------------------------------------------------
 
@@ -579,6 +632,9 @@ class Notification(BaseModel):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import tools._state
+    tools._state._event_loop = asyncio.get_running_loop()
+
     # Open DM channel for notifications
     resp = slack_client.conversations_open(users=[SLACK_USER_ID])
     dm_channel = resp["channel"]["id"]
@@ -670,5 +726,59 @@ async def notify(notification: Notification):
     return {"status": "queued"}
 
 
+@app.websocket("/ws/extension")
+async def ws_extension(ws: WebSocket):
+    """WebSocket endpoint for the Chrome browser extension."""
+    global _extension_ws
+    await ws.accept()
+
+    # First message must be auth token
+    try:
+        auth_msg = await asyncio.wait_for(ws.receive_json(), timeout=10)
+        if auth_msg.get("token") != BROWSER_TOKEN:
+            await ws.close(code=4001, reason="Invalid token")
+            return
+    except (asyncio.TimeoutError, Exception):
+        await ws.close(code=4002, reason="Auth timeout")
+        return
+
+    _extension_ws = ws
+    print(f"[browser] Extension connected (ws id={id(ws)})")
+
+    try:
+        while True:
+            msg = await ws.receive_json()
+            msg_type = msg.get("type", "unknown")
+            print(f"[browser] Received message type={msg_type}")
+            if msg_type == "cdp_result":
+                cmd_id = msg.get("id")
+                future = _pending_cdp.pop(cmd_id, None)
+                if future and not future.done():
+                    if "error" in msg:
+                        future.set_exception(RuntimeError(msg["error"]))
+                    else:
+                        future.set_result(msg.get("result", {}))
+            elif msg_type == "ping":
+                pass  # keepalive, ignore
+    except WebSocketDisconnect:
+        print("[browser] Extension WS: clean disconnect")
+    except Exception as e:
+        print(f"[browser] Extension WS error: {type(e).__name__}: {e}")
+    finally:
+        was_current = _extension_ws is ws
+        if was_current:
+            _extension_ws = None
+        # Cancel any pending futures
+        for cmd_id, future in _pending_cdp.items():
+            if not future.done():
+                future.set_exception(ConnectionError("Extension disconnected"))
+        _pending_cdp.clear()
+        print(f"[browser] Extension disconnected (was_current={was_current})")
+
+
 if __name__ == "__main__":
+    # Ensure this module is accessible as 'slack_server' (not just '__main__')
+    # so that cross-imports from tools/browser.py share the same globals.
+    import sys
+    sys.modules.setdefault("slack_server", sys.modules[__name__])
     uvicorn.run(app, host="0.0.0.0", port=8000)

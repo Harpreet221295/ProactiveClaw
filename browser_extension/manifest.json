@@ -1,0 +1,17 @@
+{
+  "manifest_version": 3,
+  "name": "ProactiveClaw Browser Control",
+  "version": "1.0",
+  "description": "Allows ProactiveClaw agent to control browser tabs via Chrome DevTools Protocol",
+  "permissions": ["debugger", "activeTab", "tabs", "storage", "alarms", "offscreen"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_icon": "icon.png",
+    "default_title": "Toggle ProactiveClaw on this tab"
+  },
+  "icons": {
+    "128": "icon.png"
+  }
+}

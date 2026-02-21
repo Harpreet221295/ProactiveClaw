@@ -10,6 +10,7 @@ from .filesystem import fs_list_files, fs_read_file, fs_write_file, fs_create_di
 from .data import fs_read_json, fs_write_json, fs_read_csv, fs_write_csv, SCHEMA as _data_schema
 from .charts import generate_chart, SCHEMA as _charts_schema
 from .memory import query_long_term_memory, retrieve_long_term_memory, SCHEMA as _memory_schema
+from .browser import browser_navigate, browser_snapshot, browser_click, browser_type, browser_screenshot, browser_get_page_info, browser_scroll, SCHEMA as _browser_schema
 
 TOOLS_SCHEMA = (
     _web_schema
@@ -21,6 +22,7 @@ TOOLS_SCHEMA = (
     + _data_schema
     + _charts_schema
     + _memory_schema
+    + _browser_schema
 )
 
 TOOL_FUNCTIONS = {
@@ -61,6 +63,13 @@ TOOL_FUNCTIONS = {
     "generate_chart": generate_chart,
     "query_long_term_memory": query_long_term_memory,
     "retrieve_long_term_memory": retrieve_long_term_memory,
+    "browser_navigate": browser_navigate,
+    "browser_snapshot": browser_snapshot,
+    "browser_click": browser_click,
+    "browser_type": browser_type,
+    "browser_screenshot": browser_screenshot,
+    "browser_get_page_info": browser_get_page_info,
+    "browser_scroll": browser_scroll,
 }
 
 
