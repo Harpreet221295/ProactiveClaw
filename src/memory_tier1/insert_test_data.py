@@ -86,8 +86,8 @@ FAKE_CONVERSATIONS = [
         "Noted — Maya from Sequoia Capital is your lead investor for the Series A round.",
     ),
     (
-        "I went to Oakridge University for undergrad and Carnegie Mellon for my Masters.",
-        "Understood — you studied at Oakridge University for undergrad and Carnegie Mellon for your Masters.",
+        "I went to Oakridge University for undergrad and Westbrook Tech for my Masters.",
+        "Understood — you studied at Oakridge University for undergrad and Westbrook Tech for your Masters.",
     ),
     (
         "I have a weekly 1:1 with Sarah on Mondays at 10am to review the roadmap.",
@@ -98,8 +98,8 @@ FAKE_CONVERSATIONS = [
         "Noted — ProactiveClaw uses OpenAI for LLMs and Slack as the user interface.",
     ),
     (
-        "My advisor is Dr. Chen from Carnegie Mellon. He mentors me on AI research.",
-        "Understood — Dr. Chen from Carnegie Mellon is your advisor and AI research mentor.",
+        "My advisor is Dr. Chen from Westbrook Tech. He mentors me on AI research.",
+        "Understood — Dr. Chen from Westbrook Tech is your advisor and AI research mentor.",
     ),
     (
         "Sarah is also working with our designer Jake who is based in London.",
