@@ -45,8 +45,8 @@ FAKE_CONVERSATIONS = [
         "Got it — you have quarterly board meetings with Maya and the other board members.",
     ),
     (
-        "My mom's name is Gurpreet. She lives in Chandigarh and calls me every Sunday.",
-        "Noted — your mom Gurpreet lives in Chandigarh and you speak every Sunday.",
+        "My mom's name is Meera. She lives in Pune and calls me every Sunday.",
+        "Noted — your mom Meera lives in Pune and you speak every Sunday.",
     ),
     (
         "Jake is working on the new design system for DataBridge. He reports to Sarah.",
@@ -70,7 +70,7 @@ FAKE_CONVERSATIONS = [
     ),
     # ── Original batch ───────────────────────────────────────────────────────
     (
-        "I'm Harpreet and I'm the CTO at NovaBridge, a tech startup in San Francisco.",
+        "I'm Ada and I'm the CTO at NovaBridge, a tech startup in San Francisco.",
         "Got it — you're the CTO at NovaBridge based in San Francisco.",
     ),
     (
@@ -86,8 +86,8 @@ FAKE_CONVERSATIONS = [
         "Noted — Maya from Sequoia Capital is your lead investor for the Series A round.",
     ),
     (
-        "I went to IIT Delhi for undergrad and Carnegie Mellon for my Masters.",
-        "Understood — you studied at IIT Delhi for undergrad and Carnegie Mellon for your Masters.",
+        "I went to Oakridge University for undergrad and Carnegie Mellon for my Masters.",
+        "Understood — you studied at Oakridge University for undergrad and Carnegie Mellon for your Masters.",
     ),
     (
         "I have a weekly 1:1 with Sarah on Mondays at 10am to review the roadmap.",

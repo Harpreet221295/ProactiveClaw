@@ -43,18 +43,18 @@ console = Console()
 # ── test memories ──────────────────────────────────────────────────────────────
 # These simulate the kind of things the agent would extract from conversations.
 TEST_MEMORIES = [
-    "User's name is Harpreet Singh and he works at a tech startup in San Francisco.",
-    "Harpreet is building an AI-powered personal assistant called ProactiveClaw.",
-    "Harpreet prefers concise Slack messages — no walls of text, short and scannable.",
-    "Harpreet is interested in Physical AI, robotics, and embodied intelligence.",
+    "User's name is Ada Lovelace and she works at a tech startup in San Francisco.",
+    "Ada is building an AI-powered personal assistant called ProactiveClaw.",
+    "Ada prefers concise Slack messages — no walls of text, short and scannable.",
+    "Ada is interested in Physical AI, robotics, and embodied intelligence.",
     "ProactiveClaw uses mem0 for long-term memory and Qdrant as the vector store.",
-    "Harpreet likes to start his mornings with a daily brief from the agent.",
+    "Ada likes to start her mornings with a daily brief from the agent.",
     "The agent uses OpenAI gpt-4.1-mini for LLM and text-embedding-3-small for embeddings.",
-    "Harpreet dislikes being asked for information the agent can look up itself.",
+    "Ada dislikes being asked for information the agent can look up itself.",
     "ProactiveClaw integrates with Google Calendar, Gmail, Notion, and Slack.",
-    "Harpreet focuses on deep work in the mornings and prefers no meetings before 10am.",
+    "Ada focuses on deep work in the mornings and prefers no meetings before 10am.",
     "The TasksDB in Notion has ID 00000000-0000-0000-0000-000000000000.",
-    "Harpreet is learning about bandit algorithms for notification scheduling.",
+    "Ada is learning about bandit algorithms for notification scheduling.",
 ]
 
 from core.paths import MEM0_DIR as _MEM0_DIR_P, KUZU_GRAPH_DIR as _KUZU_DIR_P

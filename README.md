@@ -54,11 +54,11 @@ python src/serve.py
 
 Open the UI and type:
 
-> I have to call Simran tonight about the visa paperwork, and I promised Maya I'd review her proposal before Thursday.
+> I have to call Riya tonight about the visa paperwork, and I promised Maya I'd review her proposal before Thursday.
 
 Both land in the **Care** panel with deadlines. Then:
 
-> Just called Simran. And be a bit less pushy going forward.
+> Just called Riya. And be a bit less pushy going forward.
 
 The first item closes, the level pill drops to `minimal`. Click **☀️ Review now** to see a morning review run, or **💤 Sleep** to watch it plan follow-ups.
 </details>

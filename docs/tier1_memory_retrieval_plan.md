@@ -80,7 +80,7 @@ detected in your message. Confidence scores indicate match certainty.
   • Peter IS_A  person
   • Peter WORKS_AT  tech startup, San Francisco
   • Peter HAS  ongoing Q2 budget discussion with Sarah
-  • Peter CO_OCCURS_WITH  Sarah, Harpreet, ProactiveClaw
+  • Peter CO_OCCURS_WITH  Sarah, Ada, ProactiveClaw
 
 "Pete"  →  Pits  [confidence: 0.75]  ← surfaced for disambiguation
   • Pits IS_A  ...

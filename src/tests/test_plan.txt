@@ -11,11 +11,11 @@ to make the sleep cycle fast.
 
 2. CHAT + COMMITMENT CAPTURE
    ./run.sh → open http://127.0.0.1:8000
-   Say: "I have to call Simran tonight, and I promised Maya I'd review
+   Say: "I have to call Riya tonight, and I promised Maya I'd review
    her proposal before Thursday."
    ✓ Two items appear in the Care panel with deadlines.
-   Say: "I just called Simran."
-   ✓ The Simran item moves to Done (no command needed).
+   Say: "I just called Riya."
+   ✓ The Riya item moves to Done (no command needed).
 
 3. PROACTIVENESS CONTROLS
    Say: "be less pushy"  → level pill changes (e.g. balanced → minimal).

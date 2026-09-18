@@ -88,9 +88,9 @@ def test_session_context_and_digest(write_config):
     write_config()
     assert brief.session_context() == ""          # empty registry → nothing injected
     reg = CareRegistry()
-    reg.add(type="commitment", title="Call Simran", deadline=(datetime.now().astimezone() + timedelta(hours=2)).isoformat())
+    reg.add(type="commitment", title="Call Riya", deadline=(datetime.now().astimezone() + timedelta(hours=2)).isoformat())
     ctx = brief.session_context()
-    assert ctx.startswith("<care_context>") and "Call Simran" in ctx and "Due within 36h" in ctx
+    assert ctx.startswith("<care_context>") and "Call Riya" in ctx and "Due within 36h" in ctx
     write_config(care_mode="heads_down")
     assert brief.session_context() == ""          # surfacing disabled in heads_down
 

@@ -202,9 +202,9 @@ SCHEMA = [
         "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}},
     {"type": "function", "function": {
         "name": "care_add_item",
-        "description": "Start tracking something. Use for commitments the user makes in conversation ('I have to call Simran tonight'), emails/tasks that need action, and follow-ups you owe the user. Near-duplicates are merged automatically.",
+        "description": "Start tracking something. Use for commitments the user makes in conversation ('I have to call Riya tonight'), emails/tasks that need action, and follow-ups you owe the user. Near-duplicates are merged automatically.",
         "parameters": {"type": "object", "properties": {
-            "title": {"type": "string", "description": "Short, specific title, e.g. 'Call Simran' or 'Reply to Maya re: term sheet'"},
+            "title": {"type": "string", "description": "Short, specific title, e.g. 'Call Riya' or 'Reply to Maya re: term sheet'"},
             "type": {"type": "string", "enum": list(ITEM_TYPES), "description": "commitment (default) for things the user said they'd do; email; task; followup; calendar"},
             "urgency": {"type": "string", "enum": ["high", "medium", "low"]},
             "deadline": {"type": "string", "description": "ISO 8601 with timezone offset, if the user implied one ('tonight' → today 21:00, 'before Thursday' → Thursday 09:00)"},

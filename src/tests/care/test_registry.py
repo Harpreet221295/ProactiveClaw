@@ -13,10 +13,10 @@ def _now():
 
 def test_add_and_persist(isolated_paths):
     reg = CareRegistry()
-    item, created = reg.add(type="commitment", title="Call Simran tonight", urgency="medium")
+    item, created = reg.add(type="commitment", title="Call Riya tonight", urgency="medium")
     assert created and item["status"] == "new" and item["id"].startswith("care_")
     reg2 = CareRegistry()
-    assert reg2.get(item["id"])["title"] == "Call Simran tonight"
+    assert reg2.get(item["id"])["title"] == "Call Riya tonight"
 
 
 def test_dedupe_by_title_and_ref():

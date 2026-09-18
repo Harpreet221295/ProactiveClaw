@@ -6,9 +6,9 @@ retrieve(extracted, session_kg_nodes) → list of triples to inject
 Decision tree per (entity, rels) pair:
   1. Fuzzy match entity in KG → not found → skip
   2. Found, rels extracted    → fuzzy match rels against entity's edges → inject matches
-  3. Found, no rels, entity IS harpreet → skip harpreet-harpreet, go to cross-entity
-  4. Found, no rels, non-harpreet:
-       a. edges to harpreet   → inject
+  3. Found, no rels, entity IS the user → skip user-user, go to cross-entity
+  4. Found, no rels, non-user:
+       a. edges to the user   → inject
        b. edges to any other session KG node → inject
        c. fallback: entity name + any 3 of its edges
 """
@@ -188,8 +188,8 @@ def retrieve(
         if True:
             # Branch: no rels extracted
             if kg_name.lower() == user_id:
-                # Skip harpreet→harpreet, go straight to cross-entity
-                # If no other session nodes, skip — harpreet has too many edges
+                # Skip user→user, go straight to cross-entity
+                # If no other session nodes, skip — the user node has too many edges
                 # to return anything meaningful without a rel filter
                 other_nodes = session_kg_nodes - {kg_name}
                 cross = []
@@ -198,10 +198,10 @@ def retrieve(
                 if cross:
                     _add(cross)
             else:
-                # a. edges to harpreet
-                to_harpreet = _edges_to_node(all_edges, user_id)
-                if to_harpreet:
-                    _add(to_harpreet)
+                # a. edges to the user
+                to_user = _edges_to_node(all_edges, user_id)
+                if to_user:
+                    _add(to_user)
                 else:
                     # b. edges to any other session KG node
                     other_nodes = session_kg_nodes - {kg_name}

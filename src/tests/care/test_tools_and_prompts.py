@@ -27,10 +27,10 @@ def test_tools_gated_by_connectors(write_config, monkeypatch):
 
 def test_care_tools_roundtrip(write_config):
     write_config(proactiveness={"level": "balanced"})
-    out = care_tools.care_add_item(title="Call Simran tonight", deadline=(datetime.now().astimezone() + timedelta(hours=3)).isoformat())
+    out = care_tools.care_add_item(title="Call Riya tonight", deadline=(datetime.now().astimezone() + timedelta(hours=3)).isoformat())
     assert out.startswith("Tracked:")
     item = CareRegistry().list("open")[0]
-    assert "Call Simran" in care_tools.care_find("simran")
+    assert "Call Riya" in care_tools.care_find("riya")
     assert "Updated" in care_tools.care_update_item(item["id"], user_intent="will do tonight", status="deferred")
     assert "Updated" in care_tools.care_resolve_item(item["id"], note="called her")
     assert CareRegistry().get(item["id"])["status"] == "done"
@@ -40,7 +40,7 @@ def test_care_tools_roundtrip(write_config):
 
 def test_commitment_capture_off_blocks_conversation_items(write_config):
     write_config(proactiveness={"level": "off"})
-    out = care_tools.care_add_item(title="Call Simran", source="conversation")
+    out = care_tools.care_add_item(title="Call Riya", source="conversation")
     assert "off" in out and CareRegistry().list("open") == []
     # explicit sources are still allowed
     assert care_tools.care_add_item(title="Reply to Maya", type="email", source="gmail", sender="maya@x.com").startswith("Tracked")

@@ -37,9 +37,9 @@ Rules:
 - Extract EVERY named entity in the message — people, organizations, projects, places, products. Do not skip any.
 - For each entity, extract relationship types if the message implies one
 - If no relationship is implied for an entity, leave rels as an empty list — but still include the entity
-- Normalize entity names to lowercase with underscores (e.g. "ProactiveClaw" → "proactiveclaw", "San Francisco" → "san_francisco", "IIT Delhi" → "iit_delhi")
+- Normalize entity names to lowercase with underscores (e.g. "ProactiveClaw" → "proactiveclaw", "San Francisco" → "san_francisco", "Oakridge University" → "oakridge_university")
 - Normalize relationship types to lowercase with underscores
-- Do NOT extract generic words, verbs, adjectives, or role descriptions as standalone entities (e.g. "investor", "advisor", "designer" are roles/relationships, NOT entities — but "my advisor" or "my lead investor" should still produce harpreet with the role as the rel)
+- Do NOT extract generic words, verbs, adjectives, or role descriptions as standalone entities (e.g. "investor", "advisor", "designer" are roles/relationships, NOT entities — but "my advisor" or "my lead investor" should still produce {self_node} with the role as the rel)
 - If the message is purely conversational with no named entities (e.g. "ok thanks", "sounds good"), return an empty list
 
 Output a JSON array. Each element: {{"entity": "...", "rels": ["...", ...]}}
@@ -64,8 +64,8 @@ Output: [{{"entity": "{self_node}", "rels": ["works_at"]}}, {{"entity": "novabri
 Message: "ProactiveClaw uses mem0 for memory"
 Output: [{{"entity": "proactiveclaw", "rels": ["uses"]}}, {{"entity": "mem0", "rels": ["used_by"]}}]
 
-Message: "I need to prep for my IIT Delhi reunion"
-Output: [{{"entity": "{self_node}", "rels": ["attended"]}}, {{"entity": "iit_delhi", "rels": ["attended_by"]}}]
+Message: "I need to prep for my Oakridge University reunion"
+Output: [{{"entity": "{self_node}", "rels": ["attended"]}}, {{"entity": "oakridge_university", "rels": ["attended_by"]}}]
 
 Message: "what's the latest with NovaBridge's Anthropic partnership?"
 Output: [{{"entity": "novabridge", "rels": ["partnership_with"]}}, {{"entity": "anthropic", "rels": ["partner_of"]}}]

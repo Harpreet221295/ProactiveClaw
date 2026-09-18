@@ -50,15 +50,15 @@ TEST_CASES = [
     # ── Original cases ───────────────────────────────────────────────────────
     (
         "when is my meeting with Sarah?",
-        "Expect: harpreet→sarah edge (co-founder / weekly_1:1)",
+        "Expect: ada→sarah edge (co-founder / weekly_1:1)",
     ),
     (
         "I want to call my co-founder",
-        "Expect: harpreet→sarah via co_founder relationship",
+        "Expect: ada→sarah via co_founder relationship",
     ),
     (
         "what do I know about my lead investor?",
-        "Expect: maya→harpreet via investor_of",
+        "Expect: maya→ada via investor_of",
     ),
     (
         "tell me about ProactiveClaw's tech stack",
@@ -66,11 +66,11 @@ TEST_CASES = [
     ),
     (
         "Maya told me the term sheet is ready",
-        "Expect: maya→harpreet (no-rel fallback)",
+        "Expect: maya→ada (no-rel fallback)",
     ),
     (
-        "I need to prep for my IIT Delhi reunion",
-        "Expect: harpreet→iit_delhi edges",
+        "I need to prep for my Oakridge University reunion",
+        "Expect: ada→oakridge_university edges",
     ),
     (
         "what's the latest with NovaBridge's Anthropic partnership?",
@@ -82,7 +82,7 @@ TEST_CASES = [
     ),
     (
         "my advisor mentioned something interesting",
-        "Expect: harpreet→dr_chen via advisor",
+        "Expect: ada→dr_chen via advisor",
     ),
     # ── New cases (batch 2 data) ─────────────────────────────────────────────
     (
@@ -91,7 +91,7 @@ TEST_CASES = [
     ),
     (
         "I need to prep for the board meeting",
-        "Expect: board_meeting→maya or harpreet→maya edges",
+        "Expect: board_meeting→maya or ada→maya edges",
     ),
     (
         "Arjun mentioned a new AI fund at a16z",
@@ -103,7 +103,7 @@ TEST_CASES = [
     ),
     (
         "I want to call my mom this weekend",
-        "Expect: harpreet→gurpreet edges",
+        "Expect: ada→meera edges",
     ),
     (
         "how is Priya's experiment going?",
@@ -132,8 +132,8 @@ TEST_CASES = [
     ),
     # ── Fuzzy matching ───────────────────────────────────────────────────────
     (
-        "Harpreet needs to talk to Sara about the roadmap",
-        "Expect: sara→sarah fuzzy, sarah→harpreet co-founder edge",
+        "Ada needs to talk to Sara about the roadmap",
+        "Expect: sara→sarah fuzzy, sarah→ada co-founder edge",
     ),
     (
         "any updates from Ria on the engineering side?",

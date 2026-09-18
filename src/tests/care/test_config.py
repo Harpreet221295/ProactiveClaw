@@ -102,7 +102,7 @@ def test_quiet_hours_helpers():
 
 
 def test_user_slug(write_config):
-    cfg = write_config(user={"name": "Harpreet Singh"})
-    assert config.user_slug(cfg) == "harpreet"
+    cfg = write_config(user={"name": "Ada Lovelace"})
+    assert config.user_slug(cfg) == "ada"
     cfg = write_config(user={"name": ""})
     assert config.user_slug(cfg) == "user"

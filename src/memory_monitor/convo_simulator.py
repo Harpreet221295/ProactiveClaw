@@ -61,8 +61,8 @@ except ImportError:
 # meaningful entities and relationships into the graph.
 SCRIPTED_PAIRS = [
     (
-        "Hey, I'm Harpreet. I work at a tech startup called NovaBridge in San Francisco.",
-        "Nice to meet you Harpreet! I'll remember that you work at NovaBridge in San Francisco.",
+        "Hey, I'm Ada. I work at a tech startup called NovaBridge in San Francisco.",
+        "Nice to meet you Ada! I'll remember that you work at NovaBridge in San Francisco.",
     ),
     (
         "I'm the CTO there. We're building an AI product called ProactiveClaw.",
@@ -97,8 +97,8 @@ SCRIPTED_PAIRS = [
         "Got it — you're raising a Series A next quarter and Maya from Sequoia is your lead investor.",
     ),
     (
-        "I went to IIT Delhi for undergrad and then did my Masters at Carnegie Mellon.",
-        "Noted — you studied at IIT Delhi and Carnegie Mellon.",
+        "I went to Oakridge University for undergrad and then did my Masters at Westbrook Tech.",
+        "Noted — you studied at Oakridge University and Westbrook Tech.",
     ),
 ]
 
