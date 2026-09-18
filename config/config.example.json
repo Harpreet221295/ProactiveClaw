@@ -1,0 +1,29 @@
+{
+  "user": {
+    "name": "Your Name",
+    "timezone": "America/Los_Angeles"
+  },
+  "llm": {
+    "model": "gpt-4o-mini"
+  },
+  "proactiveness": {
+    "level": "balanced"
+  },
+  "care_mode": "normal",
+  "connectors": {
+    "gmail": false,
+    "calendar": false,
+    "notion": false,
+    "web_search": true,
+    "browser": false
+  },
+  "notion": {
+    "tasks_database_id": "",
+    "tasks_schema_hint": ""
+  },
+  "morning_review": {
+    "time": "07:30",
+    "days": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"]
+  },
+  "overrides": {}
+}

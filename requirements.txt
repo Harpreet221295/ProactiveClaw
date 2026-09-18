@@ -1,12 +1,32 @@
-openai
-tavily-python
-python-dotenv
-fastapi
-uvicorn
-google-api-python-client
-google-auth-oauthlib
-requests
-slack_sdk
-matplotlib
-pandas
-mem0ai
+# LLM providers (at least one key required)
+openai>=1.50
+anthropic>=0.40
+
+# Server + web UI
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-dotenv>=1.0
+requests>=2.31
+pydantic>=2.0
+
+# Optional connectors (installed by default so toggling them on just works)
+tavily-python>=0.5            # web search
+google-api-python-client>=2.120   # Gmail + Calendar
+google-auth-oauthlib>=1.2
+slack_sdk>=3.27               # optional Slack delivery channel
+
+# Memory (vector + graph) — used automatically when an OpenAI key is present
+mem0ai>=0.1.100
+kuzu>=0.6
+rank-bm25>=0.2
+rapidfuzz>=3.5
+
+# Charts / data tools
+matplotlib>=3.8
+pandas>=2.1
+
+# Nice terminal output
+rich>=13.7
+
+# Tests
+pytest>=8.0

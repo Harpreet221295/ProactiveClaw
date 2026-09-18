@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ProactiveClaw</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🦞</text></svg>">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <div class="brand"><span class="logo">🦞</span><span>ProactiveClaw</span></div>
+    <div class="topbar-center">
+      <span id="status-pill" class="pill pill-muted"><span class="dot"></span><span id="status-text">connecting…</span></span>
+      <span id="level-pill" class="pill pill-level" title="Proactiveness level (click to change)">level: —</span>
+      <span id="mode-pill" class="pill pill-mode" title="Care mode (click to change)">mode: —</span>
+    </div>
+    <div class="topbar-actions">
+      <button id="btn-review" class="btn btn-ghost" title="Run the morning review now">☀️ Review now</button>
+      <button id="btn-sleep" class="btn btn-ghost" title="End the session now (runs the pre-exit flow)">💤 Sleep</button>
+      <button id="btn-settings" class="btn btn-ghost" title="Settings">⚙️</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-head">
+        <h2>Care</h2>
+        <div class="sidebar-tabs">
+          <button class="tab active" data-view="open">Open</button>
+          <button class="tab" data-view="closed">Done</button>
+          <button class="tab" data-view="nudges">Nudges</button>
+        </div>
+      </div>
+      <div id="care-list" class="care-list"></div>
+      <div class="sidebar-foot">
+        <form id="care-add" class="care-add">
+          <input id="care-add-title" type="text" placeholder="Track something… (e.g. Call Simran tonight)" autocomplete="off">
+          <button type="submit" class="btn btn-small">Add</button>
+        </form>
+      </div>
+    </aside>
+
+    <main class="chat">
+      <div id="messages" class="messages"></div>
+      <div id="typing" class="typing hidden"><span class="dots"><i></i><i></i><i></i></span><span id="typing-text">thinking…</span></div>
+      <form id="composer" class="composer">
+        <div id="attachments" class="attachments hidden"></div>
+        <div class="composer-row">
+          <button type="button" id="btn-attach" class="btn btn-ghost" title="Attach image">📎</button>
+          <textarea id="input" rows="1" placeholder="Message ProactiveClaw… (Enter to send, Shift+Enter for newline)"></textarea>
+          <button type="submit" id="btn-send" class="btn btn-primary">Send</button>
+        </div>
+        <input type="file" id="file-input" accept="image/*" multiple hidden>
+      </form>
+    </main>
+  </div>
+
+  <div id="settings" class="modal hidden">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h2>Settings</h2>
+        <button id="btn-settings-close" class="btn btn-ghost">✕</button>
+      </div>
+      <div class="modal-body">
+        <section>
+          <h3>How proactive should I be?</h3>
+          <div id="levels" class="levels"></div>
+        </section>
+        <section>
+          <h3>What matters right now (care mode)</h3>
+          <div id="modes" class="modes"></div>
+        </section>
+        <section>
+          <h3>Connectors</h3>
+          <p class="hint">Optional. Turn on only what you want the assistant to see. Each needs its credentials in <code>.env</code> (or Google's <code>credentials.json</code>).</p>
+          <div id="connectors" class="connectors"></div>
+        </section>
+        <section>
+          <h3>Fine-tuning</h3>
+          <div class="grid2">
+            <label>Max nudges / day <input type="number" min="0" max="20" id="ov-max_nudges_per_day" placeholder="preset"></label>
+            <label>Quiet hours start <input type="time" id="ov-qh-start"></label>
+            <label>Quiet hours end <input type="time" id="ov-qh-end"></label>
+            <label>Urgency threshold
+              <select id="ov-urgency_threshold"><option value="">preset</option><option value="high">high only</option><option value="medium">medium+</option><option value="low">everything</option></select>
+            </label>
+            <label>Commitment capture
+              <select id="ov-commitment_capture"><option value="">preset</option><option value="off">off</option><option value="conservative">conservative</option><option value="aggressive">aggressive</option></select>
+            </label>
+            <label>Morning review message
+              <select id="ov-morning_review_dm"><option value="">preset</option><option value="always">always</option><option value="if_items">if there are items</option><option value="if_high_urgency">only if urgent</option><option value="never">never</option></select>
+            </label>
+            <label>Morning review time <input type="time" id="mr-time"></label>
+            <label>Boosted topics <input type="text" id="ov-boosted_topics" placeholder="investor, term sheet"></label>
+            <label>Muted topics <input type="text" id="ov-muted_topics" placeholder="newsletter, webinar"></label>
+          </div>
+          <p class="hint">Leave a field empty to use the level/mode preset.</p>
+        </section>
+        <section>
+          <h3>You &amp; the model</h3>
+          <div class="grid2">
+            <label>Your name <input type="text" id="user-name" placeholder="Used in prompts and memory"></label>
+            <label>Timezone <input type="text" id="user-tz" placeholder="e.g. America/Los_Angeles"></label>
+            <label>Model <input type="text" id="llm-model" placeholder="gpt-4o-mini or claude-sonnet-5"></label>
+            <label>Notion tasks database id <input type="text" id="notion-db" placeholder="optional"></label>
+          </div>
+        </section>
+        <section>
+          <h3>Effective configuration</h3>
+          <pre id="config-summary" class="summary"></pre>
+        </section>
+      </div>
+      <div class="modal-foot">
+        <span id="settings-msg" class="hint"></span>
+        <button id="btn-settings-save" class="btn btn-primary">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/marked@12/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

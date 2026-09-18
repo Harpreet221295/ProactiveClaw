@@ -1,10 +1,35 @@
+# Secrets & credentials
 .env
-token.json
 credentials.json
-__pycache__/
-*.pyc
-.vscode/
-sessions/
+token.json
+
+# Per-user configuration (copy from config/config.example.json)
+config/config.json
+
+# Runtime state
+engagement_data/
 agent_file_system/
+sessions/
+data/
+mem0_data/
+kuzu_graph/
+src/mem0_data/
+src/kuzu_graph/
+src/personalized_bandits/bandit_state.json
 queue.json
 bandit_state.json
+reengagement.json
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+proactive_claw_venv/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+.claude/

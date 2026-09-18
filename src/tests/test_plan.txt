@@ -1,0 +1,47 @@
+=====================================================
+  ProactiveClaw — Manual Test Plan (web UI)
+=====================================================
+
+Automated tests:  pytest      (no API calls; ~200 tests)
+Live checks below need a real LLM key. Set AGENT_TIMEOUT=45 in .env
+to make the sleep cycle fast.
+
+1. SETUP
+   ./setup.sh → answer the wizard → ./health_check.sh --fast passes.
+
+2. CHAT + COMMITMENT CAPTURE
+   ./run.sh → open http://127.0.0.1:8000
+   Say: "I have to call Simran tonight, and I promised Maya I'd review
+   her proposal before Thursday."
+   ✓ Two items appear in the Care panel with deadlines.
+   Say: "I just called Simran."
+   ✓ The Simran item moves to Done (no command needed).
+
+3. PROACTIVENESS CONTROLS
+   Say: "be less pushy"  → level pill changes (e.g. balanced → minimal).
+   Say: "we're fundraising this month" → mode pill shows fundraising.
+   ⚙️ Settings → change level, save → summary updates.
+
+4. MORNING REVIEW
+   ☀️ Review now. Watch agent_file_system/morning_review_log.txt.
+   ✓ New items from enabled connectors appear; daily_brief.json written;
+     Nudges tab shows ≤ (cap − 1) nudges, ≥30 min apart, none in quiet hours.
+
+5. SLEEP → NUDGE → WAKE
+   Wait AGENT_TIMEOUT seconds (or click 💤 Sleep).
+   ✓ Status pill → sleeping; a short goodbye appears; Nudges tab fills.
+   When a nudge fires: ✓ it appears highlighted in chat (+ browser notification
+   if the tab is hidden). Reply → ✓ status → awake, reply references the nudge.
+
+6. PATTERN LEARNING
+   Dismiss three items from the same sender in the Care panel.
+   ☀️ Review now → ✓ that sender's new emails are no longer tracked.
+   Say: "ignore anything about webinars" → ✓ care_patterns.json gains a mute rule.
+
+7. CONNECTOR GATING
+   Settings → turn Notion off → save. Ask "what's in my Notion tasks?"
+   ✓ The assistant says Notion isn't connected (no tool call attempted).
+
+8. LEVEL OFF
+   Settings → off. Click 💤 Sleep. ✓ No nudges scheduled. Morning review job
+   disappears from engagement_data/cron_jobs.json.

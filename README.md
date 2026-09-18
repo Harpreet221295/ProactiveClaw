@@ -1,344 +1,216 @@
-# ProactiveClaw
+# 🦞 ProactiveClaw
 
-A long-horizon persistent ReACT agent that remembers conversations, times out on idle, and proactively schedules follow-up notifications to re-engage the user.
+**A personal assistant that reaches out to you — as much or as little as you want.**
 
-## How It Works
+Most assistants wait to be asked. ProactiveClaw keeps a running *care registry* of the things that matter to you (emails that need a reply, tasks with deadlines, promises you made in conversation), reviews it every morning, nudges you at sensible times, learns what you actually care about, and gently checks in when you've gone quiet. You choose how proactive it is with a single dial.
 
-**CLI mode:**
-```
-┌─────────────┐         ┌──────────────┐         ┌─────────────┐
-│   main.py   │──save──▶│  sessions/   │◀──load──│   main.py   │
-│  (agent CLI)│         │  <id>.json   │         │  (resumed)  │
-└──────┬──────┘         └──────────────┘         └─────────────┘
-       │ timeout
-       ▼
-┌──────────────┐        ┌──────────────┐
-│  pre-exit    │──write─▶│  queue.json  │
-│  flow (LLM)  │        └──────┬───────┘
-└──────────────┘               │ poll every 30s
-                         ┌─────▼───────┐
-                         │ scheduler.py │
-                         │  (terminal)  │
-                         └─────────────┘
-```
+It runs locally, in your browser, with your own API key. Gmail, Google Calendar, Notion, web search and Slack are **optional connectors** — turn on only what you're comfortable with.
 
-**Slack mode:**
-```
-┌─────────────────────────────────────┐
-│  slack_server.py (always running)   │
-│                                     │
-│  POST /slack/events                 │
-│    → receives user DM               │
-│    → runs agent.run(msg)            │
-│    → posts response back via DM     │
-│                                     │
-│  Background: poll_queue()           │
-│    → polls queue.json every 30s     │
-│    → sends due notifications as DMs │
-│                                     │
-│  Exposed via ngrok                  │
-└─────────────────────────────────────┘
-```
+<p align="center"><img src="docs/screenshot.png" alt="ProactiveClaw web UI" width="820"></p>
 
-1. **User starts `main.py`** — picks an existing session or creates a new one
-2. **User chats** — the agent uses web search (Tavily) to answer questions; conversation is saved to disk after every turn
-3. **User goes idle** — after `AGENT_TIMEOUT` seconds of no input, the agent runs a **pre-exit flow** where the LLM generates 5 scheduled notifications at different time horizons
-4. **Scheduler fires notifications** — `scheduler.py` polls `queue.json` every 30s and prints notifications when their timestamps are due
-5. **User returns** — runs `main.py` again, resumes the session with full conversation history, and pending queue entries for that session are cleared
+---
 
-## Project Structure
-
-```
-ProactiveClaw/
-├── .env                # API keys + AGENT_TIMEOUT + Slack credentials
-├── requirements.txt    # Python dependencies
-├── prompts.py          # System prompt + pre-exit prompt
-├── tools/              # Tool definitions — modular package
-│   ├── __init__.py     # Aggregates all tools, re-exports public interface
-│   ├── _state.py       # Shared state (session ID, queue file path, FS base)
-│   ├── _google_auth.py # Google OAuth (shared by calendar + gmail)
-│   ├── web.py          # tavily_search (1 tool)
-│   ├── scheduling.py   # schedule_notifications, get_current_datetime (2 tools)
-│   ├── calendar.py     # Google Calendar CRUD (4 tools)
-│   ├── gmail.py        # Gmail read/send/reply (4 tools)
-│   ├── notion.py       # Notion search/read/create/update/query (6 tools)
-│   ├── filesystem.py   # File system ops + search (7 tools)
-│   ├── data.py         # Structured data — JSON & CSV read/write (4 tools)
-│   └── charts.py       # generate_chart via matplotlib (1 tool)
-├── reengagement.json   # Created at runtime — re-engagement DM state + history
-├── bandit.py           # Multi-armed bandit for adaptive notification scheduling
-├── agent.py            # Agent class with persistence + pre-exit flow
-├── main.py             # CLI entrypoint with timeout + session management
-├── scheduler.py        # FastAPI server + background queue poller (CLI mode)
-├── slack_server.py     # Slack bot server + notification delivery (Slack mode)
-├── sessions/           # Created at runtime — stores conversation JSON files
-└── queue.json          # Created at runtime — notification queue
-```
-
-### File Breakdown
-
-| File | Purpose |
-|------|---------|
-| **`prompts.py`** | Contains `SYSTEM_PROMPT` (agent behavior rules), `PRE_EXIT_PROMPT` (instructs the LLM to generate timezone-aware notifications), and `REENGAGEMENT_PROMPT` (instructs a fresh agent to craft contextual re-engagement DMs) |
-| **`tools/`** | Modular package with 29 tools across 10 modules. Includes web search, scheduling, Google Calendar, Gmail, Notion, file system operations (with search and pagination for large files), structured data (JSON/CSV with row-based pagination), and chart generation. Re-exports `TOOLS_SCHEMA`, `dispatch_tool_call`, `set_current_session_id`, and `QUEUE_FILE` from `__init__.py` |
-| **`agent.py`** | The `Agent` class — manages conversation history (text + images), serializes OpenAI message objects to JSON for persistence, saves/loads sessions from disk, and runs the pre-exit flow on timeout |
-| **`main.py`** | CLI entrypoint — uses `select.select()` for input with timeout (macOS/Linux), manages session selection, clears stale queue entries on resume |
-| **`scheduler.py`** | FastAPI app that runs independently — polls `queue.json` every 30s and prints due notifications to the terminal. Used in CLI mode only |
-| **`slack_server.py`** | Slack bot server — receives DMs via Slack Events API, runs the agent, posts responses back as DMs. Polls `queue.json` for notifications, runs cron jobs, and monitors for re-engagement DMs when the user goes silent |
-
-## Setup
-
-### 1. Install dependencies
+## Quick start (5 minutes)
 
 ```bash
+git clone https://github.com/Harpreet221295/ProactiveClaw.git
+cd ProactiveClaw
+./setup.sh        # creates .venv, installs deps, runs the setup wizard
+./run.sh          # → open http://127.0.0.1:8000
+```
+
+The wizard asks for **one LLM key** (OpenAI *or* Anthropic) and lets you skip everything else. You can add connectors later from the ⚙️ Settings panel or by editing `.env` and `config/config.json`.
+
+Requirements: Python 3.11+, macOS or Linux (Windows works via WSL).
+
+<details>
+<summary>Manual setup instead of the wizard</summary>
+
+```bash
+python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
+cp .env.example .env                       # add OPENAI_API_KEY or ANTHROPIC_API_KEY
+cp config/config.example.json config/config.json
+python src/serve.py
 ```
+</details>
 
-### 2. Configure environment
+---
 
-Create a `.env` file in the project root:
+## What it does
 
-```env
-OPENAI_API_KEY=your-openai-api-key
-TAVILY_API_KEY=your-tavily-api-key
-AGENT_TIMEOUT=300
+| | |
+|---|---|
+| **Chat** | A normal assistant with tools: web search, files, charts, calendar, email, Notion, browser — whichever you enable. |
+| **Care registry** | Everything worth tracking lives in one place with a lifecycle (`new → acknowledged → in_progress / deferred / snoozed → done / dismissed`). Say *"I just replied to Maya"* and the matching item is resolved — no commands needed. |
+| **Commitment capture** | *"I have to call Simran tonight"* becomes a tracked item with a deadline and a nudge. Sensitivity depends on your level. |
+| **Morning review** | Every day at your chosen time: tend existing items (expire snoozes, escalate repeated deferrals, flag broken "I'll do it tonight" promises), pull only *new* emails/tasks/events, write a brief, schedule a few well-timed nudges. |
+| **Nudges** | Short, specific check-ins ("Meeting with Sarah in 1h — you wanted to raise the Q2 budget"). Capped per day, never during quiet hours, spaced apart, linked to registry items. |
+| **Pattern learning** | Dismiss emails from a sender three times and they stop surfacing. Always act on a topic and it gets boosted. Tell it *"ignore newsletters"* and that becomes a rule. |
+| **Re-engagement** | If you go silent after the nudges run out, it waits (3 days / a week / …) and reaches out with something concrete from your history — timed using a bandit model of when you usually respond. |
+| **Memory** | Long-term memory (vector + knowledge graph via mem0) plus passive "tier-1" recall that injects related facts when you mention a person or project. |
+| **Sub-agents** | Long jobs ("triage all my unread email") run as background processes and report back. |
 
-# Slack mode (optional — only needed if using Slack interface)
-SLACK_BOT_TOKEN=xoxb-...
-SLACK_SIGNING_SECRET=...
-SLACK_USER_ID=U...
-```
+---
 
-- `OPENAI_API_KEY` — your OpenAI API key (uses GPT-4o)
-- `TAVILY_API_KEY` — your [Tavily](https://tavily.com/) API key for web search
-- `AGENT_TIMEOUT` — seconds of idle time before the agent auto-exits (default: 300 = 5 minutes)
-- `SLACK_BOT_TOKEN` — Bot User OAuth Token from your Slack app (starts with `xoxb-`)
-- `SLACK_SIGNING_SECRET` — Signing Secret from your Slack app's Basic Information page
-- `SLACK_USER_ID` — your Slack user ID (find it in your Slack profile → three dots → Copy member ID)
+## How proactive should it be?
 
-## Running
+Pick a level in Settings, in the wizard, or just tell it: *"be less pushy"*, *"nudge me more"*, *"stop reaching out"*.
 
-There are two modes: **CLI mode** (local terminal) and **Slack mode** (DM a Slack bot). Pick one.
+| Level | What you get |
+|---|---|
+| **off** | Reactive only. Never reaches out. Reminders and cron jobs you set explicitly still fire. |
+| **minimal** | Deadline-driven only. ≤1 nudge/day, morning review runs silently, no re-engagement. |
+| **balanced** *(default)* | Daily morning review, ≤3 nudges/day, asks before tracking borderline commitments, re-engages after a week. |
+| **active** | ≤6 nudges/day, captures commitments aggressively, follows up on research, re-engages after 3 days. |
+| **max** | ≤10 nudges/day, short quiet hours, tracks anything that sounds like a commitment, re-engages daily. |
 
-### CLI Mode
+**Care modes** layer a situation on top of the level — *"I'm heads down this week"*, *"we're fundraising"*, *"I'm travelling till Friday"*:
 
-You need **two terminals**:
+| Mode | Effect |
+|---|---|
+| `normal` | No extra filtering. |
+| `focus` | Only high-urgency items, ≤2 nudges/day, conservative capture. |
+| `fundraising` | Investor / term sheet / board / legal topics boosted and escalated faster; nudge cap raised. |
+| `travel` | Long quiet hours, only truly urgent items. |
+| `heads_down` | Near-silent: hard deadlines only, no commitment capture. |
 
-**Terminal 1 — Start the scheduler (keep running):**
+Fine-tune anything (nudge cap, quiet hours, urgency threshold, boosted/muted topics …) in Settings → *Fine-tuning*. Resolution order: defaults ← level ← mode ← your overrides. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
-```bash
-python scheduler.py
-```
+---
 
-This starts a FastAPI server on port 8000 and begins polling `queue.json` every 30 seconds.
+## Connectors (all optional)
 
-**Terminal 2 — Start the agent CLI:**
+| Connector | Needs | What the assistant can do |
+|---|---|---|
+| **Web search** | `TAVILY_API_KEY` ([free tier](https://tavily.com)) | Look things up. |
+| **Gmail** | `credentials.json` from Google Cloud + one-time sign-in | Read your inbox, track emails needing action. **Never sends unless you ask.** |
+| **Google Calendar** | same as Gmail | See events, avoid nudging during meetings, create events on request. |
+| **Notion** | `NOTION_API_KEY` ([integration](https://www.notion.so/my-integrations)) + share pages with it | Search/read pages, query your tasks database. |
+| **Browser** | `BROWSER_TOKEN` + the Chrome extension in `src/browser_extension/` | Drive your browser when you explicitly ask. |
+| **Slack** | `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, `SLACK_USER_ID` | Also deliver messages to a Slack DM (the web UI stays primary). |
 
-```bash
-python main.py
-```
+A connector is active only when it's **enabled in config *and* its credentials exist**. Disabled connectors are invisible to the model — it won't pretend to have them.
 
-On first run, a new session is created automatically. On subsequent runs, you'll see a menu:
+<details>
+<summary>Google (Gmail + Calendar) setup</summary>
 
-```
-Existing sessions:
-  1. a3f8b2c1
-  2. 7e9d4f06
-  3. Start new session
+1. [Google Cloud Console](https://console.cloud.google.com/) → create a project → enable **Gmail API** and **Google Calendar API**.
+2. APIs & Services → Credentials → *Create credentials* → **OAuth client ID** → *Desktop app*. Download the JSON and save it as `credentials.json` in the project root.
+3. OAuth consent screen → add yourself as a test user.
+4. Enable Gmail/Calendar in Settings and click **Connect Google** (or run `python src/setup_wizard.py --google`). A browser window signs you in once; `token.json` is stored locally and refreshed automatically.
+</details>
 
-Pick a session number:
-```
+<details>
+<summary>Slack setup (optional)</summary>
 
-### Chatting
+1. [api.slack.com/apps](https://api.slack.com/apps) → create app → **OAuth & Permissions** → scopes `chat:write`, `im:history`, `im:read`, `im:write`, `files:read` → install.
+2. Put the bot token, signing secret and your member id in `.env`.
+3. To *send* messages from Slack too, expose the server (`ngrok http 8000`) and set Event Subscriptions → Request URL to `https://<ngrok>/slack/events`, event `message.im`.
+</details>
 
-```
-You: What's the latest news about SpaceX?
+---
 
-  [tool] tavily_search({"query": "latest SpaceX news"})
+## Using it
 
-Agent: SpaceX successfully launched...
-```
+- **Chat** as you would with any assistant. Mention commitments naturally; they show up in the **Care** panel.
+- **Care panel** (left): open items grouped by *overdue / due soon / open / snoozed*, with one-click *Done / Snooze / Dismiss*. Dismissals teach the pattern learner.
+- **Nudges tab**: what's queued, today's budget, morning-review status. Cancel anything you don't want.
+- **☀️ Review now** runs the morning review on demand. **💤 Sleep** ends the session immediately (runs the pre-exit flow that plans follow-ups).
+- **Browser notifications** fire for nudges when the tab is in the background (allow them when prompted).
+- Ask *"how proactive are you?"*, *"what are you tracking?"*, *"ignore anything from that sender"* — the assistant has tools for all of it.
 
-### Sending Images (CLI)
+Terminal-only mode (no UI, nudges aren't delivered): `./run.sh --cli`.
 
-Use `/image` or `/img` followed by a file path:
+---
 
-```
-You: /image /path/to/screenshot.png
-Caption (or press Enter): What's wrong with this error message?
-
-Agent: The error is a NullPointerException on line 42...
-```
-
-If you press Enter without a caption, it defaults to "What's in this image?". Supports PNG, JPEG, GIF, and WebP.
-
-### Timeout & Notifications
-
-If you stop typing for `AGENT_TIMEOUT` seconds:
-
-```
-[timeout] Session idle — running pre-exit flow...
-  [tool] schedule_notifications({"notifications": [...]})
-
-Agent: I've scheduled some follow-ups. See you later!
-
-[session saved — exiting due to inactivity]
-```
-
-Over in Terminal 1 (scheduler), you'll see notifications fire at their scheduled times:
-
-```
-[notification] (session a3f8b2c1) Hey! We were looking into SpaceX — ready to pick back up?
-[notification] (session a3f8b2c1) The launch results you asked about may have updated by now.
-```
-
-### Resuming a Session
-
-Just run `python main.py` again, pick the session, and the full conversation history is restored. Any pending queue entries for that session are cleared so you don't get stale notifications.
-
-### Slack Mode
-
-You need **two terminals** and a Slack app:
-
-**Terminal 1 — Start the Slack server:**
-
-```bash
-python slack_server.py
-```
-
-**Terminal 2 — Expose via ngrok:**
-
-```bash
-ngrok http 8000
-```
-
-Copy the HTTPS URL from ngrok (e.g. `https://abc123.ngrok.io`) and set it as your Slack app's Event Subscriptions Request URL: `https://abc123.ngrok.io/slack/events`
-
-Then just DM the bot in Slack. All conversations share a single persistent session (`slack_<your_user_id>`), and scheduled notifications are delivered as Slack DMs. You can also send images — just attach a photo to your message and the agent will see it.
-
-#### Slack App Setup
-
-1. Go to [api.slack.com/apps](https://api.slack.com/apps) and create a new app
-2. **OAuth & Permissions** — add Bot Token Scopes: `chat:write`, `im:history`, `im:read`, `im:write`, `files:read`
-3. **Event Subscriptions** — enable events, set Request URL to your ngrok HTTPS URL + `/slack/events`
-4. **Subscribe to bot events** — add `message.im`
-5. **Install to workspace** — copy the Bot User OAuth Token and Signing Secret into your `.env`
-
-## Adaptive Notification Scheduling (Multi-Armed Bandit)
-
-Instead of using fixed time horizons, ProactiveClaw learns when you're most likely to respond using a **multi-armed bandit (MAB)** algorithm.
-
-### How It Works
-
-- **168 arms** — one for each (day_of_week, hour) combination across the week
-- **Rewards** — responding to a notification within 10 minutes gives reward 1.0; starting an organic chat gives reward 0.5
-- **Time-decayed updates** — recent interactions matter more than old ones. Arms unused for ~10 days effectively reset to 0
-- **Top-K recommendations** — the highest-scoring time slots are passed to the LLM, which makes the final scheduling decision
-
-The update rule uses exponential decay:
-```
-decay = exp(-lambda * days_since_last_update)
-Q[arm] = decay * Q_old + (1 - decay) * reward
-```
-
-### Cold Start
-
-When no data exists yet (fresh install), all arms are at 0 and no recommendations are generated. The LLM falls back to its own judgment — the same behavior as before the MAB was added.
-
-### State Persistence
-
-Bandit state is stored in `bandit_state.json` (gitignored) and persists across server restarts. The file contains Q-values, last-updated timestamps, and the decay parameter lambda (default: 0.1).
-
-### Files
-
-| File | Purpose |
-|------|---------|
-| `bandit.py` | MAB model — update, recommend, save/load state |
-| `bandit_state.json` | Runtime state (gitignored) |
-
-## Re-engagement DMs
-
-When the agent sleeps and all scheduled invocations expire with no user response, the agent doesn't just go silent forever. A **re-engagement monitor** periodically wakes up, reviews past context using long-term memory, and sends a proactive DM to bring the user back.
-
-### Timeline
+## How it works
 
 ```
-User idle → pre-exit → invocations scheduled → invocations fire/expire → user ignores all
-                                                └── re-engagement timer starts here
+                 ┌────────────────────────── web UI (browser) ──────────────────────────┐
+                 │  chat  ·  care panel  ·  nudges  ·  settings                          │
+                 └───────────────▲──────────────────────────────┬───────────────────────┘
+                                 │ WebSocket / REST             │
+┌────────────────────────────────┴──────────────────────────────▼─────────────────────────┐
+│  server/  (FastAPI)                                                                     │
+│   runtime.py   handle_message · idle→pre-exit→sleep · morning review · nudge delivery   │
+│                cron jobs · re-engagement · sub-agent watchdog                            │
+│   channels.py  broadcast to UI (+ optional Slack) · transcript                          │
+└──────┬──────────────────────┬───────────────────────────┬───────────────────────────────┘
+       │                      │                           │
+┌──────▼───────┐   ┌──────────▼──────────┐   ┌────────────▼──────────────┐
+│ agents/      │   │ care/               │   │ core/                     │
+│ Agent loop   │   │ registry.py  items  │   │ config.py  levels · modes │
+│ prompts      │   │ patterns.py  learn  │   │            connectors     │
+│ tools/*      │   │ brief.py     views  │   │ paths.py                  │
+│ sub-agents   │   │ nudges.py    budget │   └───────────────────────────┘
+└──────────────┘   └─────────────────────┘
 ```
 
-### Backoff Schedule
+**A day in the life**
 
-| Attempt | Interval after last |
-|---------|-------------------|
-| 1st     | 72 hours          |
-| 2nd     | 1 week            |
-| 3rd     | 2 weeks           |
-| 4th+    | 1 month (cap)     |
+1. **07:30 – morning review** (a protected cron job): `registry.tend()` runs deterministically — snoozes expire, items deferred 3× escalate, overdue promises get flagged, stale low-value items archive. Then the agent pulls *only new* emails/tasks/events since the last check, adds what clears the urgency threshold (after pattern scoring), writes `daily_brief.json` as a view of the registry, and schedules nudges — the code enforces the daily cap, quiet hours, 30-min spacing and leaves headroom for later.
+2. **You chat.** The first message of a session gets a `<care_context>` digest so the assistant can weave in what's relevant. Anything you say about tracked items updates them; new commitments are captured per your level.
+3. **You go quiet** (`AGENT_TIMEOUT`, default 5 min): the **pre-exit flow** updates the registry from the conversation, schedules follow-ups *from registry state* (linked to item ids, never duplicating queued nudges or reminders), summarises the session into memory, and sleeps.
+4. **Nudges fire** at their times. Replying wakes the assistant with the nudge as context. Response timing feeds a 168-arm bandit (day × hour) that learns when you're reachable.
+5. **Nothing left and still silent?** Re-engagement waits per your level's backoff, then sends one specific, useful message.
 
-### How It Works
+**State on disk** (all gitignored)
 
-1. `poll_notifications()` detects when the invocation queue drains to empty while sleeping — records `invocations_exhausted_at` in `reengagement.json`
-2. `_reengagement_monitor()` checks every 5 minutes whether the backoff interval has elapsed
-3. Once eligible, it consults the **multi-armed bandit** — the DM is only sent when the current (day, hour) slot matches a top-5 recommended time. If no bandit data exists (cold start), it sends immediately
-4. A **fresh agent** (no session history) spawns with bandit recommendations in the prompt, queries long-term memory for past topics, and crafts a contextual DM
-5. The DM is sent via Slack, and the attempt is logged to `reengagement.json` so future DMs avoid repeating topics
-6. If the user responds at any point, `_reset_reengagement()` clears the timer and resets the attempt counter (message history is preserved)
+| Path | Contents |
+|---|---|
+| `engagement_data/care_registry.json` | The registry: items, lifecycle, intents, nudge counts, last-check timestamps |
+| `engagement_data/care_patterns.json` | Learned sender/topic tendencies + explicit mute/boost rules |
+| `engagement_data/queue.json`, `reminders.json`, `cron_jobs.json`, `nudge_log.json` | Scheduling state |
+| `agent_file_system/` | The assistant's own workspace (brief, notes, files it makes for you) |
+| `sessions/`, `data/transcript.jsonl` | Conversation history |
+| `data/mem0/`, `data/kuzu_graph/`, `data/bandit_state.json` | Long-term memory and timing model |
 
-### State File
+---
 
-`reengagement.json` tracks the re-engagement state:
+## Commands
 
-```json
-{
-  "invocations_exhausted_at": "2026-02-16T19:10:00-08:00",
-  "attempt_number": 1,
-  "messages": [
-    {
-      "sent_at": "2026-02-19T19:10:00-08:00",
-      "message": "Hey! I noticed you were working on tax filing last time..."
-    }
-  ]
-}
+| | |
+|---|---|
+| `./run.sh` | Start the server + UI |
+| `./run.sh --cli` | Terminal chat |
+| `./health_check.sh [--fast]` | Verify keys, connectors, storage |
+| `python src/setup_wizard.py` | Re-run setup (keeps existing values as defaults) |
+| `pytest` | Run the test suite (no API calls) |
+| `./bash_scripts/reset/full_reset.sh [--dry-run]` | Wipe runtime state (memory, registry, queues, sessions) |
+| `./memory_monitor.sh` | Watch the knowledge graph fill up |
+
+Environment variables: see [`.env.example`](.env.example). Server host/port: `HOST`, `PORT`.
+
+---
+
+## Project layout
+
+```
+src/
+├── serve.py            entry point (web server)
+├── main.py             CLI chat
+├── setup_wizard.py     first-run setup
+├── server/             app.py (routes) · runtime.py (proactive loops) · channels.py · browser_bridge.py
+├── web/                index.html · app.js · style.css  (no build step)
+├── core/               config.py (levels, modes, connectors) · paths.py
+├── care/               registry.py · patterns.py · brief.py · nudges.py
+├── agents/             agent.py · prompts/ · tools/ (care, scheduling, gmail, calendar, notion, …) · sub-agents
+├── llms/               OpenAI + Anthropic clients behind one interface
+├── memory.py, memory_tier1/   mem0 + graph memory, passive recall
+├── personalized_bandits/      response-time bandit
+├── health_check/, reset/, memory_monitor/
+└── tests/              pytest suite (care, config, scheduling, prompts, sub-agents)
 ```
 
-## API Endpoint
+---
 
-The scheduler also exposes a REST endpoint for external integrations:
+## Privacy & safety notes
 
-```bash
-curl -X POST http://localhost:8000/notify \
-  -H "Content-Type: application/json" \
-  -d '{
-    "timestamp": "2025-06-15T14:00:00-08:00",
-    "message": "Check on your research results",
-    "session_id": "a3f8b2c1"
-  }'
-```
+- Everything runs on your machine; the only outbound calls are to your LLM provider and the connectors you enable.
+- The assistant **never sends email or messages on your behalf unless you explicitly ask** in that conversation.
+- Secrets live in `.env`, `credentials.json`, `token.json` — all gitignored. Don't commit `config/config.json` either (it may contain database ids).
 
-This endpoint is also available on `slack_server.py` for compatibility.
+## License
 
-## Quick Test
-
-### CLI mode (low timeout)
-
-```bash
-# In .env, set:
-AGENT_TIMEOUT=30
-
-# Terminal 1:
-python scheduler.py
-
-# Terminal 2:
-python main.py
-# Ask a question, then wait 30 seconds
-# Watch the pre-exit flow trigger and notifications appear in Terminal 1
-```
-
-### Slack mode
-
-1. Start `python slack_server.py` + `ngrok http 8000`
-2. Configure the ngrok URL in Slack Event Subscriptions
-3. DM the bot "hello" — you should get a response
-4. Send an image with a question — the agent should describe/analyze it
-5. Ask the agent to schedule a reminder for 1 minute from now — it should arrive as a Slack DM
+MIT — see [LICENSE](LICENSE).
