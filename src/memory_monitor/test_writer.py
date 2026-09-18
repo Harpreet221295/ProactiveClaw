@@ -53,7 +53,7 @@ TEST_MEMORIES = [
     "Harpreet dislikes being asked for information the agent can look up itself.",
     "ProactiveClaw integrates with Google Calendar, Gmail, Notion, and Slack.",
     "Harpreet focuses on deep work in the mornings and prefers no meetings before 10am.",
-    "The TasksDB in Notion has ID 2eb5d319-2f3e-8061-a2af-f0691b0e6740.",
+    "The TasksDB in Notion has ID 00000000-0000-0000-0000-000000000000.",
     "Harpreet is learning about bandit algorithms for notification scheduling.",
 ]
 
