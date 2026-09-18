@@ -1,215 +1,249 @@
+<div align="center">
+
 # 🦞 ProactiveClaw
 
-**A personal assistant that reaches out to you — as much or as little as you want.**
+**The assistant that comes to you.**
 
-Most assistants wait to be asked. ProactiveClaw keeps a running *care registry* of the things that matter to you (emails that need a reply, tasks with deadlines, promises you made in conversation), reviews it every morning, nudges you at sensible times, learns what you actually care about, and gently checks in when you've gone quiet. You choose how proactive it is with a single dial.
+A local, open-source personal assistant that keeps track of what matters, reviews it every morning, nudges you at the right moment, and learns what you actually care about. You decide how proactive it is, with one dial.
 
-It runs locally, in your browser, with your own API key. Gmail, Google Calendar, Notion, web search and Slack are **optional connectors** — turn on only what you're comfortable with.
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-194%20passing-brightgreen)](src/tests)
+[![Runs locally](https://img.shields.io/badge/runs-100%25%20local-orange)](#privacy)
+[![OpenAI or Anthropic](https://img.shields.io/badge/LLM-OpenAI%20%7C%20Anthropic-8A2BE2)](#quick-start)
 
-<p align="center"><img src="docs/screenshot.png" alt="ProactiveClaw web UI" width="820"></p>
+[Quick start](#quick-start) · [What it does](#what-it-does) · [Proactiveness dial](#the-proactiveness-dial) · [Connectors](#connectors-all-optional) · [How it works](#how-it-works) · [Configuration](docs/CONFIGURATION.md)
+
+<img src="docs/screenshot.png" alt="ProactiveClaw web UI: chat on the right, care panel on the left" width="860">
+
+</div>
 
 ---
 
-## Quick start (5 minutes)
+## Why
+
+Every assistant waits to be asked. Meanwhile the things that actually matter slip: the email you meant to answer tonight, the "I'll call her before Thursday" you said out loud, the task that's been quietly deferred three mornings in a row.
+
+ProactiveClaw keeps a **care registry** of those things, tends it every morning, and reaches out with something specific and actionable, never more often than you've allowed. Say *"I just replied to Maya"* and the item closes itself. Say *"be less pushy"* and it is.
+
+## Quick start
 
 ```bash
 git clone https://github.com/Harpreet221295/ProactiveClaw.git
 cd ProactiveClaw
-./setup.sh        # creates .venv, installs deps, runs the setup wizard
-./run.sh          # → open http://127.0.0.1:8000
+./setup.sh      # creates .venv, installs deps, runs a short wizard
+./run.sh        # → http://127.0.0.1:8000
 ```
 
-The wizard asks for **one LLM key** (OpenAI *or* Anthropic) and lets you skip everything else. You can add connectors later from the ⚙️ Settings panel or by editing `.env` and `config/config.json`.
-
-Requirements: Python 3.11+, macOS or Linux (Windows works via WSL).
+You need **one LLM key** (OpenAI *or* Anthropic). Everything else is optional and can be added later from ⚙️ Settings. Python 3.11+, macOS/Linux (Windows via WSL).
 
 <details>
-<summary>Manual setup instead of the wizard</summary>
+<summary><b>Manual setup</b> (no wizard)</summary>
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env                       # add OPENAI_API_KEY or ANTHROPIC_API_KEY
+cp .env.example .env                        # add OPENAI_API_KEY or ANTHROPIC_API_KEY
 cp config/config.example.json config/config.json
 python src/serve.py
 ```
 </details>
 
----
+<details>
+<summary><b>Try it in 60 seconds</b></summary>
+
+Open the UI and type:
+
+> I have to call Simran tonight about the visa paperwork, and I promised Maya I'd review her proposal before Thursday.
+
+Both land in the **Care** panel with deadlines. Then:
+
+> Just called Simran. And be a bit less pushy going forward.
+
+The first item closes, the level pill drops to `minimal`. Click **☀️ Review now** to see a morning review run, or **💤 Sleep** to watch it plan follow-ups.
+</details>
 
 ## What it does
 
-| | |
-|---|---|
-| **Chat** | A normal assistant with tools: web search, files, charts, calendar, email, Notion, browser — whichever you enable. |
-| **Care registry** | Everything worth tracking lives in one place with a lifecycle (`new → acknowledged → in_progress / deferred / snoozed → done / dismissed`). Say *"I just replied to Maya"* and the matching item is resolved — no commands needed. |
-| **Commitment capture** | *"I have to call Simran tonight"* becomes a tracked item with a deadline and a nudge. Sensitivity depends on your level. |
-| **Morning review** | Every day at your chosen time: tend existing items (expire snoozes, escalate repeated deferrals, flag broken "I'll do it tonight" promises), pull only *new* emails/tasks/events, write a brief, schedule a few well-timed nudges. |
-| **Nudges** | Short, specific check-ins ("Meeting with Sarah in 1h — you wanted to raise the Q2 budget"). Capped per day, never during quiet hours, spaced apart, linked to registry items. |
-| **Pattern learning** | Dismiss emails from a sender three times and they stop surfacing. Always act on a topic and it gets boosted. Tell it *"ignore newsletters"* and that becomes a rule. |
-| **Re-engagement** | If you go silent after the nudges run out, it waits (3 days / a week / …) and reaches out with something concrete from your history — timed using a bandit model of when you usually respond. |
-| **Memory** | Long-term memory (vector + knowledge graph via mem0) plus passive "tier-1" recall that injects related facts when you mention a person or project. |
-| **Sub-agents** | Long jobs ("triage all my unread email") run as background processes and report back. |
+| Feature | What it does |
+|:--|:--|
+| 🗂️ **Care registry** | One place for everything worth tracking: emails needing action, tasks with deadlines, promises made in chat, follow-ups it owes you. Real lifecycle: `new → acknowledged → in progress / deferred / snoozed → done / dismissed`. |
+| 🗣️ **Commitment capture** | *"I need to send the deck by Friday"* becomes a tracked item with a deadline and a nudge. Sensitivity follows your level. |
+| ☀️ **Morning review** | Deterministic housekeeping first (expire snoozes, escalate repeated deferrals, flag broken "tonight" promises, archive stale items), then pull only what's **new** from your sources, write a brief, schedule a few well-timed nudges. |
+| 📣 **Nudges that respect you** | Capped per day, never in quiet hours, spaced 30 min apart, tied to a specific item. Enforced in code, not just prompts. |
+| 🧠 **Pattern learning** | Dismiss a sender three times and they stop surfacing. Always act on a topic and it gets boosted. *"Ignore newsletters"* becomes a rule. |
+| 🌙 **Re-engagement** | Gone quiet after the nudges ran out? It waits (3 days, a week, …) and comes back with one concrete thing, timed by a bandit that learns when you actually reply. |
+| 💬 **A proper assistant** | Web search, files, charts, calendar, email, Notion, browser, whichever you enable. Long-term memory (vector + knowledge graph) with passive recall. Background sub-agents for big jobs. |
+| 🔌 **Optional everything** | Gmail, Calendar, Notion, web search, browser and Slack are connectors you switch on. Off means invisible to the model. |
 
----
+## The proactiveness dial
 
-## How proactive should it be?
-
-Pick a level in Settings, in the wizard, or just tell it: *"be less pushy"*, *"nudge me more"*, *"stop reaching out"*.
+Set it in Settings, in the wizard, or just say it: *"stop reaching out"*, *"nudge me more"*.
 
 | Level | What you get |
-|---|---|
-| **off** | Reactive only. Never reaches out. Reminders and cron jobs you set explicitly still fire. |
-| **minimal** | Deadline-driven only. ≤1 nudge/day, morning review runs silently, no re-engagement. |
-| **balanced** *(default)* | Daily morning review, ≤3 nudges/day, asks before tracking borderline commitments, re-engages after a week. |
-| **active** | ≤6 nudges/day, captures commitments aggressively, follows up on research, re-engages after 3 days. |
-| **max** | ≤10 nudges/day, short quiet hours, tracks anything that sounds like a commitment, re-engages daily. |
+|:--|:--|
+| **off** | Reactive only. Never reaches out. Explicit reminders and cron jobs still fire. |
+| **minimal** | Deadline-driven only. ≤ 1 nudge/day, silent morning review, no re-engagement. |
+| **balanced** ← default | Daily review, ≤ 3 nudges/day, asks before tracking borderline commitments, re-engages after a week. |
+| **active** | ≤ 6 nudges/day, aggressive commitment capture, follows up on research, re-engages after 3 days. |
+| **max** | ≤ 10 nudges/day, short quiet hours, tracks anything commitment-shaped, re-engages daily. |
 
-**Care modes** layer a situation on top of the level — *"I'm heads down this week"*, *"we're fundraising"*, *"I'm travelling till Friday"*:
+**Care modes** layer your current situation on top. *"I'm heads down this week"*, *"we're fundraising"*, *"travelling till Friday"*:
 
 | Mode | Effect |
-|---|---|
-| `normal` | No extra filtering. |
-| `focus` | Only high-urgency items, ≤2 nudges/day, conservative capture. |
-| `fundraising` | Investor / term sheet / board / legal topics boosted and escalated faster; nudge cap raised. |
-| `travel` | Long quiet hours, only truly urgent items. |
-| `heads_down` | Near-silent: hard deadlines only, no commitment capture. |
+|:--|:--|
+| `focus` | High-urgency only, ≤ 2 nudges/day, conservative capture |
+| `fundraising` | Investor / term sheet / board / legal boosted and escalated faster, cap raised |
+| `travel` | Long quiet hours, only truly urgent items |
+| `heads_down` | Near silent: hard deadlines only, no capture |
 
-Fine-tune anything (nudge cap, quiet hours, urgency threshold, boosted/muted topics …) in Settings → *Fine-tuning*. Resolution order: defaults ← level ← mode ← your overrides. See [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
-
----
+Resolution order: `defaults ← level ← mode ← your overrides`. Every knob (cap, quiet hours, urgency threshold, boosted/muted topics …) is in Settings → Fine-tuning. Full reference in [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
 ## Connectors (all optional)
 
-| Connector | Needs | What the assistant can do |
-|---|---|---|
-| **Web search** | `TAVILY_API_KEY` ([free tier](https://tavily.com)) | Look things up. |
-| **Gmail** | `credentials.json` from Google Cloud + one-time sign-in | Read your inbox, track emails needing action. **Never sends unless you ask.** |
-| **Google Calendar** | same as Gmail | See events, avoid nudging during meetings, create events on request. |
-| **Notion** | `NOTION_API_KEY` ([integration](https://www.notion.so/my-integrations)) + share pages with it | Search/read pages, query your tasks database. |
-| **Browser** | `BROWSER_TOKEN` + the Chrome extension in `src/browser_extension/` | Drive your browser when you explicitly ask. |
-| **Slack** | `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, `SLACK_USER_ID` | Also deliver messages to a Slack DM (the web UI stays primary). |
+| Connector | Needs | Lets it |
+|:--|:--|:--|
+| 🔍 **Web search** | `TAVILY_API_KEY` ([free tier](https://tavily.com)) | look things up |
+| ✉️ **Gmail** | `credentials.json` + one-time sign-in | read your inbox, track emails needing action. **Never sends unless you ask.** |
+| 📅 **Google Calendar** | same as Gmail | see events, avoid nudging during meetings, create events on request |
+| 📝 **Notion** | `NOTION_API_KEY` ([integration](https://www.notion.so/my-integrations)) | search pages, query your tasks database |
+| 🌐 **Browser** | `BROWSER_TOKEN` + [extension](src/browser_extension) | drive Chrome when you explicitly ask |
+| 💬 **Slack** | bot token, signing secret, member id | also deliver to a Slack DM (web UI stays primary) |
 
-A connector is active only when it's **enabled in config *and* its credentials exist**. Disabled connectors are invisible to the model — it won't pretend to have them.
+A connector is active only when it's **enabled in config *and* its credentials exist**.
 
 <details>
-<summary>Google (Gmail + Calendar) setup</summary>
+<summary><b>Google setup (Gmail + Calendar)</b></summary>
 
-1. [Google Cloud Console](https://console.cloud.google.com/) → create a project → enable **Gmail API** and **Google Calendar API**.
-2. APIs & Services → Credentials → *Create credentials* → **OAuth client ID** → *Desktop app*. Download the JSON and save it as `credentials.json` in the project root.
+1. [Google Cloud Console](https://console.cloud.google.com/) → new project → enable **Gmail API** and **Google Calendar API**.
+2. Credentials → *Create credentials* → **OAuth client ID** → *Desktop app* → download → save as `credentials.json` in the project root.
 3. OAuth consent screen → add yourself as a test user.
-4. Enable Gmail/Calendar in Settings and click **Connect Google** (or run `python src/setup_wizard.py --google`). A browser window signs you in once; `token.json` is stored locally and refreshed automatically.
+4. Settings → enable Gmail/Calendar → **Connect Google**. A browser window signs you in once; `token.json` is stored locally and refreshed automatically. (CLI: `python src/setup_wizard.py --google`.)
 </details>
 
 <details>
-<summary>Slack setup (optional)</summary>
+<summary><b>Slack setup</b></summary>
 
-1. [api.slack.com/apps](https://api.slack.com/apps) → create app → **OAuth & Permissions** → scopes `chat:write`, `im:history`, `im:read`, `im:write`, `files:read` → install.
-2. Put the bot token, signing secret and your member id in `.env`.
-3. To *send* messages from Slack too, expose the server (`ngrok http 8000`) and set Event Subscriptions → Request URL to `https://<ngrok>/slack/events`, event `message.im`.
+1. [api.slack.com/apps](https://api.slack.com/apps) → new app → **OAuth & Permissions** → scopes `chat:write`, `im:history`, `im:read`, `im:write`, `files:read` → install.
+2. Put `SLACK_BOT_TOKEN`, `SLACK_SIGNING_SECRET`, `SLACK_USER_ID` in `.env`. Outbound delivery now works.
+3. To *send* from Slack too: `ngrok http 8000`, then Event Subscriptions → Request URL `https://<ngrok>/slack/events`, event `message.im`.
 </details>
-
----
-
-## Using it
-
-- **Chat** as you would with any assistant. Mention commitments naturally; they show up in the **Care** panel.
-- **Care panel** (left): open items grouped by *overdue / due soon / open / snoozed*, with one-click *Done / Snooze / Dismiss*. Dismissals teach the pattern learner.
-- **Nudges tab**: what's queued, today's budget, morning-review status. Cancel anything you don't want.
-- **☀️ Review now** runs the morning review on demand. **💤 Sleep** ends the session immediately (runs the pre-exit flow that plans follow-ups).
-- **Browser notifications** fire for nudges when the tab is in the background (allow them when prompted).
-- Ask *"how proactive are you?"*, *"what are you tracking?"*, *"ignore anything from that sender"* — the assistant has tools for all of it.
-
-Terminal-only mode (no UI, nudges aren't delivered): `./run.sh --cli`.
-
----
 
 ## How it works
 
-```
-                 ┌────────────────────────── web UI (browser) ──────────────────────────┐
-                 │  chat  ·  care panel  ·  nudges  ·  settings                          │
-                 └───────────────▲──────────────────────────────┬───────────────────────┘
-                                 │ WebSocket / REST             │
-┌────────────────────────────────┴──────────────────────────────▼─────────────────────────┐
-│  server/  (FastAPI)                                                                     │
-│   runtime.py   handle_message · idle→pre-exit→sleep · morning review · nudge delivery   │
-│                cron jobs · re-engagement · sub-agent watchdog                            │
-│   channels.py  broadcast to UI (+ optional Slack) · transcript                          │
-└──────┬──────────────────────┬───────────────────────────┬───────────────────────────────┘
-       │                      │                           │
-┌──────▼───────┐   ┌──────────▼──────────┐   ┌────────────▼──────────────┐
-│ agents/      │   │ care/               │   │ core/                     │
-│ Agent loop   │   │ registry.py  items  │   │ config.py  levels · modes │
-│ prompts      │   │ patterns.py  learn  │   │            connectors     │
-│ tools/*      │   │ brief.py     views  │   │ paths.py                  │
-│ sub-agents   │   │ nudges.py    budget │   └───────────────────────────┘
-└──────────────┘   └─────────────────────┘
+```mermaid
+flowchart LR
+    subgraph UI["🖥️ Web UI"]
+        chat[Chat] --- care[Care panel] --- nudges[Nudges] --- settings[Settings]
+    end
+    subgraph Server["server/ · FastAPI"]
+        rt[runtime.py<br/>sessions · morning review · nudge delivery<br/>cron · re-engagement · watchdog]
+        ch[channels.py<br/>WebSocket + optional Slack]
+    end
+    subgraph Brain["agents/"]
+        agent[Agent loop] --> tools[tools: care · scheduling · gmail · calendar · notion · web · fs · browser]
+        agent --> sub[sub-agents]
+    end
+    subgraph Care["care/"]
+        reg[(care_registry.json)]
+        pat[(care_patterns.json)]
+        brief[daily brief]
+    end
+    subgraph Core["core/"]
+        cfg[config.py<br/>levels · modes · connectors]
+    end
+    UI <-->|ws / rest| Server
+    Server --> agent
+    tools <--> reg
+    tools <--> pat
+    reg --> brief
+    cfg -.-> Server & agent & tools
 ```
 
 **A day in the life**
 
-1. **07:30 – morning review** (a protected cron job): `registry.tend()` runs deterministically — snoozes expire, items deferred 3× escalate, overdue promises get flagged, stale low-value items archive. Then the agent pulls *only new* emails/tasks/events since the last check, adds what clears the urgency threshold (after pattern scoring), writes `daily_brief.json` as a view of the registry, and schedules nudges — the code enforces the daily cap, quiet hours, 30-min spacing and leaves headroom for later.
-2. **You chat.** The first message of a session gets a `<care_context>` digest so the assistant can weave in what's relevant. Anything you say about tracked items updates them; new commitments are captured per your level.
-3. **You go quiet** (`AGENT_TIMEOUT`, default 5 min): the **pre-exit flow** updates the registry from the conversation, schedules follow-ups *from registry state* (linked to item ids, never duplicating queued nudges or reminders), summarises the session into memory, and sleeps.
-4. **Nudges fire** at their times. Replying wakes the assistant with the nudge as context. Response timing feeds a 168-arm bandit (day × hour) that learns when you're reachable.
-5. **Nothing left and still silent?** Re-engagement waits per your level's backoff, then sends one specific, useful message.
+```mermaid
+sequenceDiagram
+    autonumber
+    participant R as Morning review (07:30)
+    participant Reg as Care registry
+    participant U as You
+    participant A as Assistant
+    R->>Reg: tend(): expire snoozes, escalate deferrals, flag broken promises
+    R->>Reg: add only NEW emails / tasks / events (after pattern scoring)
+    R->>A: write brief · schedule ≤ cap−1 nudges (quiet hours, spacing enforced)
+    U->>A: chats — first message carries a care-context digest
+    A->>Reg: capture commitments · infer intent ("I replied to Maya" → done)
+    Note over U,A: silence for AGENT_TIMEOUT
+    A->>Reg: pre-exit: update items, schedule follow-ups from registry state
+    A-->>U: nudge fires at its time (browser notification if tab hidden)
+    U->>A: reply — wakes the assistant with the nudge as context, teaches the timing model
+    Note over A: nothing left & still quiet → re-engagement after level's backoff
+```
 
-**State on disk** (all gitignored)
+<details>
+<summary><b>State on disk</b> (all gitignored)</summary>
 
 | Path | Contents |
-|---|---|
-| `engagement_data/care_registry.json` | The registry: items, lifecycle, intents, nudge counts, last-check timestamps |
-| `engagement_data/care_patterns.json` | Learned sender/topic tendencies + explicit mute/boost rules |
-| `engagement_data/queue.json`, `reminders.json`, `cron_jobs.json`, `nudge_log.json` | Scheduling state |
-| `agent_file_system/` | The assistant's own workspace (brief, notes, files it makes for you) |
-| `sessions/`, `data/transcript.jsonl` | Conversation history |
-| `data/mem0/`, `data/kuzu_graph/`, `data/bandit_state.json` | Long-term memory and timing model |
-
----
+|:--|:--|
+| `engagement_data/care_registry.json` | items, lifecycle, intents, nudge counts, last-check timestamps |
+| `engagement_data/care_patterns.json` | learned sender/topic tendencies + explicit mute/boost rules |
+| `engagement_data/queue.json`, `reminders.json`, `cron_jobs.json`, `nudge_log.json` | scheduling state |
+| `agent_file_system/` | the assistant's workspace: brief, notes, files it makes for you |
+| `sessions/`, `data/transcript.jsonl` | conversation history |
+| `data/mem0/`, `data/kuzu_graph/`, `data/bandit_state.json` | long-term memory and timing model |
+</details>
 
 ## Commands
 
-| | |
-|---|---|
-| `./run.sh` | Start the server + UI |
-| `./run.sh --cli` | Terminal chat |
-| `./health_check.sh [--fast]` | Verify keys, connectors, storage |
-| `python src/setup_wizard.py` | Re-run setup (keeps existing values as defaults) |
-| `pytest` | Run the test suite (no API calls) |
-| `./bash_scripts/reset/full_reset.sh [--dry-run]` | Wipe runtime state (memory, registry, queues, sessions) |
-| `./memory_monitor.sh` | Watch the knowledge graph fill up |
+| Command | Does |
+|:--|:--|
+| `./run.sh` | start the server + UI |
+| `./run.sh --cli` | terminal chat (nudges aren't delivered in this mode) |
+| `./health_check.sh --fast` | verify keys, connectors, storage |
+| `python src/setup_wizard.py` | re-run setup, existing values kept as defaults |
+| `pytest` | run the test suite (no API calls) |
+| `./bash_scripts/reset/full_reset.sh --dry-run` | see what a full reset would wipe |
 
-Environment variables: see [`.env.example`](.env.example). Server host/port: `HOST`, `PORT`.
+Environment variables: [`.env.example`](.env.example). Server address: `HOST`, `PORT`.
 
----
-
-## Project layout
+<details>
+<summary><b>Project layout</b></summary>
 
 ```
 src/
-├── serve.py            entry point (web server)
-├── main.py             CLI chat
-├── setup_wizard.py     first-run setup
-├── server/             app.py (routes) · runtime.py (proactive loops) · channels.py · browser_bridge.py
-├── web/                index.html · app.js · style.css  (no build step)
-├── core/               config.py (levels, modes, connectors) · paths.py
-├── care/               registry.py · patterns.py · brief.py · nudges.py
-├── agents/             agent.py · prompts/ · tools/ (care, scheduling, gmail, calendar, notion, …) · sub-agents
-├── llms/               OpenAI + Anthropic clients behind one interface
+├── serve.py               entry point (web server)
+├── main.py                CLI chat
+├── setup_wizard.py        first-run setup
+├── server/                app.py (routes) · runtime.py (proactive loops) · channels.py · browser_bridge.py
+├── web/                   index.html · app.js · style.css   (no build step)
+├── core/                  config.py (levels, modes, connectors) · paths.py
+├── care/                  registry.py · patterns.py · brief.py · nudges.py
+├── agents/                agent.py · prompts/ · tools/ · sub-agent runner
+├── llms/                  OpenAI + Anthropic behind one interface
 ├── memory.py, memory_tier1/   mem0 + graph memory, passive recall
-├── personalized_bandits/      response-time bandit
-├── health_check/, reset/, memory_monitor/
-└── tests/              pytest suite (care, config, scheduling, prompts, sub-agents)
+├── personalized_bandits/  response-time bandit
+├── health_check/ · reset/ · memory_monitor/
+└── tests/                 pytest suite
 ```
+</details>
 
----
+## Privacy
 
-## Privacy & safety notes
+- Runs entirely on your machine. The only outbound calls are to your LLM provider and the connectors you enable.
+- It **never sends email or messages on your behalf unless you explicitly ask** in that conversation.
+- Secrets (`.env`, `credentials.json`, `token.json`) and all runtime data are gitignored. Don't commit `config/config.json` either.
 
-- Everything runs on your machine; the only outbound calls are to your LLM provider and the connectors you enable.
-- The assistant **never sends email or messages on your behalf unless you explicitly ask** in that conversation.
-- Secrets live in `.env`, `credentials.json`, `token.json` — all gitignored. Don't commit `config/config.json` either (it may contain database ids).
+## Roadmap
+
+- [ ] First-run setup inside the UI (paste a key, done)
+- [ ] Docker image / `pipx install`
+- [ ] Action buttons on nudges (Done · Snooze · Draft reply)
+- [ ] Visible review status and error log in the UI
+- [ ] Daily token / cost counter
+- [ ] Hosted Google OAuth client so "Connect Google" is one click
+
+Ideas and PRs welcome. Start with [docs/CONFIGURATION.md](docs/CONFIGURATION.md) and the manual [test plan](src/tests/test_plan.txt).
 
 ## Relationship to OpenClaw
 
@@ -217,4 +251,4 @@ ProactiveClaw takes its name (and the lobster) from [OpenClaw](https://github.co
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+[MIT](LICENSE) © Harpreet Singh
