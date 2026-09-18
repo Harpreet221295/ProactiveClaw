@@ -211,6 +211,10 @@ src/
 - The assistant **never sends email or messages on your behalf unless you explicitly ask** in that conversation.
 - Secrets live in `.env`, `credentials.json`, `token.json` — all gitignored. Don't commit `config/config.json` either (it may contain database ids).
 
+## Relationship to OpenClaw
+
+ProactiveClaw takes its name (and the lobster) from [OpenClaw](https://github.com/openclaw/openclaw), but it is an independent project, not a fork, and it is not affiliated with the OpenClaw Foundation. OpenClaw is a general "does things when you ask" agent; ProactiveClaw's whole point is the other half of the loop: a care registry, a morning review, a proactiveness dial, commitment capture and pattern learning, so the assistant comes to *you* with the right thing at the right time. Both are MIT licensed.
+
 ## License
 
 MIT — see [LICENSE](LICENSE).
