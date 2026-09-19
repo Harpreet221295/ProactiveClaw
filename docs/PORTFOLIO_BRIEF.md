@@ -28,6 +28,21 @@ Every AI assistant waits to be asked; the things that actually slip are the ones
 9. **Provider-agnostic LLM layer** (OpenAI + Anthropic behind one interface with tool-call and image conversion) and mid-conversation context compaction (browser-snapshot summarisation, token-threshold summarisation with orphan-tool-call cleanup).
 10. **Clone-and-go release engineering:** setup wizard, health check that adapts to enabled connectors, reset tooling, centralised paths, a dependency-free web UI (vanilla JS + WebSocket, no build step), and a git-history scrub of personal data before going public.
 
+## Approach: how to build a proactive AI agent (the design thesis)
+
+This is the part to stress. The technical contribution is less any single component than the *shape* of the loop.
+
+1. **Invert the loop: state first, model second.** A reactive assistant is `message → model → reply`. A proactive one needs durable state the model reads and writes: the care registry. Every proactive behaviour (morning review, nudges, re-engagement) is driven *from registry state*, never invented ad hoc by a prompt. That is what gives continuity across days and makes behaviour explainable ("nudged because item X, deferred 3×, deadline tomorrow").
+2. **Separate judgment from guarantees.** The model decides *what matters and what to say* (urgency, wording, which items). Code decides *whether it's allowed* (daily cap, quiet hours, spacing, level = off). Guarantees the user relies on must not depend on a prompt being followed. This was validated the hard way: the first live run over-scheduled and the tool layer caught it.
+3. **Make proactiveness a user-owned dial, resolved like a cascade.** `defaults ← level ← situational mode ← explicit overrides`, with `off` absolute. One mental model for users, one resolution function for the code, and the system prompt is regenerated from the result so the model always knows the current rules.
+4. **Deterministic housekeeping before any LLM call.** `tend()` handles snooze expiry, deferral escalation, overdue detection and stale archiving with plain rules. Cheaper, testable, and it means the model starts each review from a tidy, already-prioritised state instead of rediscovering it.
+5. **Capture intent from ordinary language, silently.** Users won't run commands. "I just replied to Maya" → fuzzy-find the item → resolve. "I'll do it tonight" → store as `user_intent` with a timestamp so a broken promise can be detected tomorrow. The registry stores the user's *own words*, which is both the audit trail and the escalation signal.
+6. **Learn from reactions, decay over time.** Every dismiss/act/defer is an observation keyed by sender, topic, category, source. Thresholded and exponentially decayed so habits emerge but stale ones fade; explicit rules ("ignore newsletters") short-circuit learning.
+7. **Nudge timing is a bandit problem, not a cron problem.** Reply latency after a nudge is the reward; ignoring is a penalty. A day×hour arm grid with periodic-kernel smoothing shares information between neighbouring hours and between weekdays, so the model learns "Tuesday 10am works" from sparse data.
+8. **Budget context, not just tokens.** Compaction of tool output (browser snapshots → one-line summaries), a passive memory tier that injects only 1-hop graph facts, and sub-agents for anything that would bloat the main conversation. The main agent stays fast; heavy work is isolated in processes with hard timeouts.
+9. **Optional by construction.** Tools are gated by connector status and the prompt is rebuilt to match. The model cannot hallucinate access, and a first-time user gets value with zero integrations.
+10. **Ship the loop, then tune it on real usage.** Prompts are the cheapest thing to change; state schemas and enforcement points are the expensive ones. The architecture front-loads the latter so the former can be iterated from dogfooding.
+
 ## Numbers (as of 2026-09-19, all from the repo)
 
 | Metric | Value |
